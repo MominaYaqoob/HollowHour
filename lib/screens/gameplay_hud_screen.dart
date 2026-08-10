@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -58,6 +59,13 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   bool _persistTutorialFlag = false;
   String? _lastPickupSeen;
   bool _ending = false;
+
+  /// Loaded top-down sheets for the equipped character (idle/walk × facing).
+  _PlayerSpriteSet? _playerSprites;
+  _EnemySpriteAtlas? _enemySprites;
+  Map<String, ui.Image>? _envSprites;
+  ui.Image? _xpOrbSprite;
+  ui.Image? _magnetSprite;
 
   PlayerController get _player => _loop.player;
   AimFireController get _aim => _loop.aim;
@@ -146,8 +154,10 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     _sessionReady = true;
 
     final economy = context.read<EconomyState>();
+    final characterId = economy.equippedCharacterId ?? 'wanderer';
     _gameState = GameState(
       hollowDepth: widget.hollowDepth,
+      playerCharacterId: characterId,
       startingMaxHp: 100 + economy.talentLevel('maxhp') * 8,
       startingMoveSpeed: 175 + economy.talentLevel('speed') * 10.0,
       startingDamage: 12 + economy.talentLevel('damage') * 2.0,
@@ -163,9 +173,86 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
       onEnded: _handleRunEnded,
     );
 
+    _loadPlayerSprites(characterId);
+    _loadEnemySprites();
+    _loadEnvSprites();
+    _loadPickupSprites();
+
     _maybeShowFirstMatchTutorial().then((_) {
       if (mounted) _loop.start();
     });
+  }
+
+  Future<void> _loadPlayerSprites(String characterId) async {
+    try {
+      final set = await _PlayerSpriteSet.load(characterId);
+      if (!mounted) {
+        set.dispose();
+        return;
+      }
+      _playerSprites?.dispose();
+      setState(() => _playerSprites = set);
+    } catch (e) {
+      debugPrint('Player sprites failed to load for $characterId: $e');
+    }
+  }
+
+  Future<void> _loadEnemySprites() async {
+    try {
+      final atlas = await _EnemySpriteAtlas.load();
+      if (!mounted) {
+        atlas.dispose();
+        return;
+      }
+      _enemySprites?.dispose();
+      setState(() => _enemySprites = atlas);
+    } catch (e) {
+      debugPrint('Enemy sprites failed to load: $e');
+    }
+  }
+
+  Future<void> _loadEnvSprites() async {
+    try {
+      final map = <String, ui.Image>{};
+      for (final path in AppAssets.gameObstacleAssets) {
+        map[path] = await _loadUiImage(path);
+      }
+      if (!mounted) {
+        for (final img in map.values) {
+          img.dispose();
+        }
+        return;
+      }
+      final old = _envSprites;
+      setState(() => _envSprites = map);
+      if (old != null) {
+        for (final img in old.values) {
+          img.dispose();
+        }
+      }
+    } catch (e) {
+      debugPrint('Environment sprites failed to load: $e');
+    }
+  }
+
+  Future<void> _loadPickupSprites() async {
+    try {
+      final xp = await _loadUiImage(AppAssets.gameXpOrb);
+      final magnet = await _loadUiImage(AppAssets.gameMagnet);
+      if (!mounted) {
+        xp.dispose();
+        magnet.dispose();
+        return;
+      }
+      _xpOrbSprite?.dispose();
+      _magnetSprite?.dispose();
+      setState(() {
+        _xpOrbSprite = xp;
+        _magnetSprite = magnet;
+      });
+    } catch (e) {
+      debugPrint('Pickup sprites failed to load: $e');
+    }
   }
 
   @override
@@ -175,6 +262,15 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
       _loop.dispose();
       _gameState.dispose();
     }
+    _playerSprites?.dispose();
+    _enemySprites?.dispose();
+    if (_envSprites != null) {
+      for (final img in _envSprites!.values) {
+        img.dispose();
+      }
+    }
+    _xpOrbSprite?.dispose();
+    _magnetSprite?.dispose();
     _damagedFlashController.dispose();
     _pickupController.dispose();
     _vignetteController.dispose();
@@ -355,7 +451,16 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                       });
                     }
                     return CustomPaint(
-                      painter: _ArenaPainter(state: _gameState),
+                      painter: _ArenaPainter(
+                        state: _gameState,
+                        playerSprites: _playerSprites,
+                        enemySprites: _enemySprites,
+                        envSprites: _envSprites,
+                        xpOrbSprite: _xpOrbSprite,
+                        magnetSprite: _magnetSprite,
+                        aimRangeAlpha: _aim.rangeIndicatorAlpha,
+                        aimRangeRadius: AimFireController.rangeIndicatorRadius,
+                      ),
                       size: size,
                     );
                   },
@@ -450,6 +555,25 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                                 ),
                               ),
 
+                            // Magnet active indicator (pickup-toast style).
+                            if (_gameState.magnetActive)
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 4),
+                                  child: _PickupToast(
+                                    text:
+                                        'MAGNET ${_gameState.magnetTimeLeft.ceil()}s',
+                                    leading: Image.asset(
+                                      AppAssets.gameMagnet,
+                                      width: 18,
+                                      height: 18,
+                                      filterQuality: FilterQuality.none,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
                             // Bottom-left joystick.
                             Align(
                               alignment: Alignment.bottomLeft,
@@ -477,29 +601,73 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                               ),
                             ),
 
-                            // Bottom-right shoot/aim.
+                            // Bottom-right shoot/aim + ammo readout.
                             Align(
                               alignment: Alignment.bottomRight,
                               child: Padding(
                                 padding:
                                     const EdgeInsets.only(right: 8, bottom: 8),
-                                child: _CircleControl(
-                                  outerSize: 96,
-                                  innerSize: 52,
-                                  label: 'AIM',
-                                  knuckle: _aim.knuckleOffset((96 - 52) / 2),
-                                  onPanStart: (delta) {
-                                    _aim.onPanStart(delta, 48);
-                                    setState(() {});
-                                  },
-                                  onPanUpdate: (delta) {
-                                    _aim.onPanUpdate(delta, 48);
-                                    setState(() {});
-                                  },
-                                  onPanEnd: () {
-                                    _aim.onPanEnd();
-                                    setState(() {});
-                                  },
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      '${_gameState.currentAmmo.toString().padLeft(3, '0')}/${_gameState.maxAmmo.toString().padLeft(3, '0')}',
+                                      style: TextStyle(
+                                        fontFamily: 'monospace',
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 1,
+                                        color: _gameState.isReloading
+                                            ? Colors.white
+                                                .withValues(alpha: 0.45)
+                                            : Colors.white
+                                                .withValues(alpha: 0.88),
+                                        shadows: [
+                                          Shadow(
+                                            color: _maroon.withValues(
+                                              alpha: 0.55,
+                                            ),
+                                            blurRadius: 6,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (_gameState.isReloading)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          'Reloading...',
+                                          style: TextStyle(
+                                            fontFamily: 'monospace',
+                                            fontSize: 10,
+                                            letterSpacing: 0.5,
+                                            color: const Color(0xFFE8C547)
+                                                .withValues(alpha: 0.9),
+                                          ),
+                                        ),
+                                      ),
+                                    const SizedBox(height: 6),
+                                    _CircleControl(
+                                      outerSize: 96,
+                                      innerSize: 52,
+                                      label: 'AIM',
+                                      knuckle:
+                                          _aim.knuckleOffset((96 - 52) / 2),
+                                      onPanStart: (delta) {
+                                        _aim.onPanStart(delta, 48);
+                                        setState(() {});
+                                      },
+                                      onPanUpdate: (delta) {
+                                        _aim.onPanUpdate(delta, 48);
+                                        setState(() {});
+                                      },
+                                      onPanEnd: () {
+                                        _aim.onPanEnd();
+                                        setState(() {});
+                                      },
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -590,27 +758,179 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   }
 }
 
+Future<ui.Image> _loadUiImage(String asset) async {
+  final data = await rootBundle.load(asset);
+  final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+  final frame = await codec.getNextFrame();
+  return frame.image;
+}
+
+/// Idle/walk sprite sheets for one equipped character id.
+class _PlayerSpriteSet {
+  _PlayerSpriteSet({
+    required this.characterId,
+    required this.idleDown,
+    required this.idleSide,
+    required this.idleUp,
+    required this.walkDown,
+    required this.walkSide,
+    required this.walkUp,
+  });
+
+  final String characterId;
+  final ui.Image idleDown;
+  final ui.Image idleSide;
+  final ui.Image idleUp;
+  final ui.Image walkDown;
+  final ui.Image walkSide;
+  final ui.Image walkUp;
+
+  static Future<_PlayerSpriteSet> load(String characterId) async {
+    final id = AppAssets.gamePlayerIds.contains(characterId)
+        ? characterId
+        : 'wanderer';
+
+    return _PlayerSpriteSet(
+      characterId: id,
+      idleDown: await _loadUiImage(AppAssets.gamePlayerIdle(id)),
+      idleSide: await _loadUiImage(AppAssets.gamePlayerIdle(id, facing: 'side')),
+      idleUp: await _loadUiImage(AppAssets.gamePlayerIdle(id, facing: 'up')),
+      walkDown: await _loadUiImage(AppAssets.gamePlayerWalk(id)),
+      walkSide: await _loadUiImage(AppAssets.gamePlayerWalk(id, facing: 'side')),
+      walkUp: await _loadUiImage(AppAssets.gamePlayerWalk(id, facing: 'up')),
+    );
+  }
+
+  void dispose() {
+    idleDown.dispose();
+    idleSide.dispose();
+    idleUp.dispose();
+    walkDown.dispose();
+    walkSide.dispose();
+    walkUp.dispose();
+  }
+}
+
+class _EnemyKindSprites {
+  _EnemyKindSprites({required this.idle, required this.walk});
+
+  final ui.Image idle;
+  final ui.Image walk;
+
+  void dispose() {
+    idle.dispose();
+    walk.dispose();
+  }
+}
+
+/// Idle/walk sheets keyed by [EnemyKind].
+class _EnemySpriteAtlas {
+  _EnemySpriteAtlas(this.byKind);
+
+  final Map<EnemyKind, _EnemyKindSprites> byKind;
+
+  static Future<_EnemySpriteAtlas> load() async {
+    Future<_EnemyKindSprites> loadKind(String kind) async {
+      return _EnemyKindSprites(
+        idle: await _loadUiImage(AppAssets.gameEnemyIdle(kind)),
+        walk: await _loadUiImage(AppAssets.gameEnemyWalk(kind)),
+      );
+    }
+
+    return _EnemySpriteAtlas({
+      EnemyKind.fast: await loadKind('fast'),
+      EnemyKind.tank: await loadKind('tank'),
+      EnemyKind.ranged: await loadKind('ranged'),
+    });
+  }
+
+  _EnemyKindSprites? forKind(EnemyKind kind) => byKind[kind];
+
+  void dispose() {
+    for (final s in byKind.values) {
+      s.dispose();
+    }
+  }
+}
+
 class _ArenaPainter extends CustomPainter {
-  _ArenaPainter({required this.state});
+  _ArenaPainter({
+    required this.state,
+    required this.playerSprites,
+    required this.enemySprites,
+    required this.envSprites,
+    required this.xpOrbSprite,
+    required this.magnetSprite,
+    required this.aimRangeAlpha,
+    required this.aimRangeRadius,
+  });
 
   final GameState state;
+  final _PlayerSpriteSet? playerSprites;
+  final _EnemySpriteAtlas? enemySprites;
+  final Map<String, ui.Image>? envSprites;
+  final ui.Image? xpOrbSprite;
+  final ui.Image? magnetSprite;
+  final double aimRangeAlpha;
+  final double aimRangeRadius;
+
+  static const double _playerDrawSize = 40;
+  static const Color _maroonGlow = Color(0xFFC41E1E);
 
   @override
   void paint(Canvas canvas, Size size) {
+    _paintAimRange(canvas);
+    _paintObstacles(canvas);
+
     // XP orbs
-    final xpPaint = Paint()..color = const Color(0xFFE8C547);
+    final xpFallback = Paint()..color = const Color(0xFFE8C547);
+    final spritePaint = Paint()..filterQuality = FilterQuality.none;
     for (final orb in state.xpOrbs) {
-      canvas.drawCircle(orb.position, orb.radius, xpPaint);
+      final img = xpOrbSprite;
+      if (img == null) {
+        canvas.drawCircle(orb.position, orb.radius, xpFallback);
+        continue;
+      }
+      final dst = Rect.fromCenter(
+        center: orb.position,
+        width: orb.radius * 2.4,
+        height: orb.radius * 2.4,
+      );
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        dst,
+        spritePaint,
+      );
     }
 
-    // Enemies — color by type
+    // Magnet pickups
+    for (final m in state.magnetPickups) {
+      final img = magnetSprite;
+      if (img == null) {
+        canvas.drawCircle(
+          m.position,
+          m.radius,
+          Paint()..color = const Color(0xFFB0B8C8),
+        );
+        continue;
+      }
+      final dst = Rect.fromCenter(
+        center: m.position,
+        width: 28,
+        height: 28,
+      );
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        dst,
+        spritePaint,
+      );
+    }
+
+    // Enemies — sprite sheets (fallback to colored circles).
     for (final e in state.enemies) {
-      final color = switch (e.type) {
-        EnemyKind.fast => const Color(0xFF7EC8E3),
-        EnemyKind.tank => const Color(0xFF6B3FA0),
-        EnemyKind.ranged => const Color(0xFFC45C26),
-      };
-      canvas.drawCircle(e.position, e.radius, Paint()..color = color);
+      _paintEnemy(canvas, e);
       // HP ring
       final hpRatio = (e.hp / e.maxHp).clamp(0.0, 1.0);
       final ring = Paint()
@@ -632,19 +952,157 @@ class _ArenaPainter extends CustomPainter {
       canvas.drawCircle(p.position, p.radius, shotPaint);
     }
 
-    // Player
-    final playerPaint = Paint()..color = const Color(0xFFE8E8E8);
-    canvas.drawCircle(state.playerPosition, 14, playerPaint);
-    canvas.drawCircle(
-      state.playerPosition,
-      14,
-      Paint()
-        ..color = const Color(0xFFC41E1E)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
+    _paintPlayer(canvas);
+  }
+
+  void _paintAimRange(Canvas canvas) {
+    if (aimRangeAlpha <= 0.01) return;
+    final opacity = (0.18 * aimRangeAlpha).clamp(0.0, 0.2);
+    final fill = Paint()
+      ..color = _maroonGlow.withValues(alpha: opacity)
+      ..style = PaintingStyle.fill;
+    final edge = Paint()
+      ..color = _maroonGlow.withValues(alpha: opacity * 1.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+    canvas.drawCircle(state.playerPosition, aimRangeRadius, fill);
+    canvas.drawCircle(state.playerPosition, aimRangeRadius, edge);
+  }
+
+  void _paintObstacles(Canvas canvas) {
+    final paint = Paint()..filterQuality = FilterQuality.none;
+    for (final o in state.obstacles) {
+      final img = envSprites?[o.assetPath];
+      if (img == null) {
+        canvas.drawCircle(
+          o.position,
+          o.radius,
+          Paint()..color = const Color(0xFF3A2A22),
+        );
+        continue;
+      }
+      final dst = Rect.fromCenter(
+        center: Offset(o.position.dx, o.position.dy - o.drawHeight * 0.18),
+        width: o.drawWidth,
+        height: o.drawHeight,
+      );
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        dst,
+        paint,
+      );
+    }
+  }
+
+  void _paintEnemy(Canvas canvas, EnemyEntity e) {
+    final sheets = enemySprites?.forKind(e.type);
+    if (sheets == null) {
+      final color = switch (e.type) {
+        EnemyKind.fast => const Color(0xFF7EC8E3),
+        EnemyKind.tank => const Color(0xFF6B3FA0),
+        EnemyKind.ranged => const Color(0xFFC45C26),
+      };
+      canvas.drawCircle(e.position, e.radius, Paint()..color = color);
+      return;
+    }
+
+    final sheet = e.moving ? sheets.walk : sheets.idle;
+    final frameH = sheet.height;
+    final frameW = frameH <= 0 ? sheet.width : frameH;
+    final frameCount =
+        frameW <= 0 ? 1 : math.max(1, sheet.width ~/ frameW);
+    final frameIndex =
+        e.moving ? (e.walkAnimTime * 8).floor() % frameCount : 0;
+
+    final drawSize = e.radius * 2.6;
+    final src = Rect.fromLTWH(
+      (frameIndex * frameW).toDouble(),
+      0,
+      frameW.toDouble(),
+      frameH.toDouble(),
+    );
+    final dst = Rect.fromCenter(
+      center: Offset.zero,
+      width: drawSize,
+      height: drawSize * (frameH / frameW),
     );
 
-    // Aim assist line while dragging AIM
+    canvas.save();
+    canvas.translate(e.position.dx, e.position.dy);
+    if (e.facingLeft) {
+      canvas.scale(-1, 1);
+    }
+    canvas.drawImageRect(
+      sheet,
+      src,
+      dst,
+      Paint()..filterQuality = FilterQuality.none,
+    );
+    canvas.restore();
+  }
+
+  void _paintPlayer(Canvas canvas) {
+    final sprites = playerSprites;
+    if (sprites == null) {
+      final playerPaint = Paint()..color = const Color(0xFFE8E8E8);
+      canvas.drawCircle(state.playerPosition, 14, playerPaint);
+      canvas.drawCircle(
+        state.playerPosition,
+        14,
+        Paint()
+          ..color = const Color(0xFFC41E1E)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5,
+      );
+      return;
+    }
+
+    final angle = state.facingAngle;
+    final ax = math.cos(angle);
+    final ay = math.sin(angle);
+    final vertical = ay.abs() >= ax.abs();
+    final flipX = !vertical && ax < 0;
+
+    final ui.Image sheet;
+    if (vertical) {
+      if (ay < 0) {
+        sheet = state.playerMoving ? sprites.walkUp : sprites.idleUp;
+      } else {
+        sheet = state.playerMoving ? sprites.walkDown : sprites.idleDown;
+      }
+    } else {
+      sheet = state.playerMoving ? sprites.walkSide : sprites.idleSide;
+    }
+
+    final frameH = sheet.height;
+    final frameW = frameH <= 0 ? sheet.width : frameH;
+    final frameCount =
+        frameW <= 0 ? 1 : math.max(1, sheet.width ~/ frameW);
+    final frameIndex = state.playerMoving
+        ? (state.walkAnimTime * 8).floor() % frameCount
+        : 0;
+
+    final src = Rect.fromLTWH(
+      (frameIndex * frameW).toDouble(),
+      0,
+      frameW.toDouble(),
+      frameH.toDouble(),
+    );
+    final dst = Rect.fromCenter(
+      center: Offset.zero,
+      width: _playerDrawSize,
+      height: _playerDrawSize * (frameH / frameW),
+    );
+
+    canvas.save();
+    canvas.translate(state.playerPosition.dx, state.playerPosition.dy);
+    if (flipX) {
+      canvas.scale(-1, 1);
+    }
+    final paint = Paint()..filterQuality = FilterQuality.none;
+    canvas.drawImageRect(sheet, src, dst, paint);
+    canvas.restore();
   }
 
   @override
@@ -751,9 +1209,10 @@ class _HpBar extends StatelessWidget {
 }
 
 class _PickupToast extends StatelessWidget {
-  const _PickupToast({required this.text});
+  const _PickupToast({required this.text, this.leading});
 
   final String text;
+  final Widget? leading;
 
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
@@ -777,7 +1236,8 @@ class _PickupToast extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Image.asset(AppAssets.iconEmbers, width: 16, height: 16),
+          leading ??
+              Image.asset(AppAssets.iconEmbers, width: 16, height: 16),
           const SizedBox(width: 8),
           Text(
             text,

@@ -58,8 +58,19 @@ class EnemyBehavior {
     for (final e in state.enemies) {
       final toPlayer = player - e.position;
       final dist = toPlayer.distance;
-      if (dist < 0.5) continue;
-      e.position += toPlayer / dist * e.speed * dt;
+      if (dist < 0.5) {
+        e.moving = false;
+        continue;
+      }
+      e.moving = true;
+      e.facingLeft = toPlayer.dx < 0;
+      e.walkAnimTime += dt;
+      final next = e.position + toPlayer / dist * e.speed * dt;
+      e.position = GameState.resolveObstacleCollision(
+        next,
+        e.radius,
+        state.obstacles,
+      );
     }
   }
 }

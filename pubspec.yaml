@@ -61,6 +61,12 @@ flutter:
     - assets/icons/
     - assets/characters/
     - assets/audio/
+    - assets/game/player/
+    - assets/game/enemies/fast/
+    - assets/game/enemies/tank/
+    - assets/game/enemies/ranged/
+    - assets/game/environment/
+    - assets/game/pickups/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

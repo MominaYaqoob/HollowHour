@@ -28,18 +28,33 @@ class PlayerController {
   void clearStick() => stick = Offset.zero;
 
   void update(Duration delta) {
-    if (!state.isRunning || stick == Offset.zero) return;
     final dt = delta.inMicroseconds / 1e6;
     if (dt <= 0) return;
+
+    if (!state.isRunning || stick == Offset.zero) {
+      state.playerMoving = false;
+      return;
+    }
 
     final size = state.worldSize;
     if (size.isEmpty) return;
 
+    state.playerMoving = true;
+    state.walkAnimTime += dt;
+    if (!state.aimFacingActive) {
+      state.facingAngle = math.atan2(stick.dy, stick.dx);
+    }
+
     const playerRadius = 14.0;
     final next = state.playerPosition + stick * state.moveSpeed * dt;
+    final resolved = GameState.resolveObstacleCollision(
+      next,
+      playerRadius,
+      state.obstacles,
+    );
     state.playerPosition = Offset(
-      next.dx.clamp(playerRadius, size.width - playerRadius),
-      next.dy.clamp(playerRadius, size.height - playerRadius),
+      resolved.dx.clamp(playerRadius, size.width - playerRadius),
+      resolved.dy.clamp(playerRadius, size.height - playerRadius),
     );
   }
 

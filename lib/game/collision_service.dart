@@ -2,12 +2,14 @@ import 'dart:ui';
 
 import '../audio/audio_manager.dart';
 import 'game_state.dart';
+import 'magnet_spawner.dart';
 
 /// Projectile/enemy/player/XP-orb overlap checks each tick.
 class CollisionService {
-  CollisionService(this.state);
+  CollisionService(this.state, {this.magnetSpawner});
 
   final GameState state;
+  MagnetSpawner? magnetSpawner;
 
   double _contactCooldown = 0;
 
@@ -16,6 +18,12 @@ class CollisionService {
 
   /// Auto-collect radius around the player.
   static const xpCollectRadius = 42.0;
+
+  /// Contact radius for magnet pickups.
+  static const magnetCollectRadius = 36.0;
+
+  /// Orb drift speed while magnet is active (px/s).
+  static const magnetOrbSpeed = 260.0;
 
   void update(Duration delta, {void Function()? onPlayerDamaged}) {
     if (!state.isRunning) return;
@@ -28,7 +36,8 @@ class CollisionService {
 
     _projectilesVsEnemies();
     _enemiesVsPlayer(onPlayerDamaged);
-    _collectXpOrbs();
+    _collectMagnetPickups();
+    _collectXpOrbs(dt);
   }
 
   void _projectilesVsEnemies() {
@@ -94,13 +103,47 @@ class CollisionService {
     }
   }
 
-  void _collectXpOrbs() {
+  void _collectMagnetPickups() {
+    if (state.magnetPickups.isEmpty) return;
+    const playerRadius = 14.0;
+    final kept = <MagnetPickupEntity>[];
+    var picked = false;
+    for (final m in state.magnetPickups) {
+      if (_circlesOverlap(
+        state.playerPosition,
+        playerRadius,
+        m.position,
+        magnetCollectRadius,
+      )) {
+        picked = true;
+      } else {
+        kept.add(m);
+      }
+    }
+    state.magnetPickups
+      ..clear()
+      ..addAll(kept);
+    if (picked) {
+      magnetSpawner?.activateFromPickup();
+      AudioManager.instance.playPickup();
+    }
+  }
+
+  void _collectXpOrbs(double dt) {
     if (state.xpOrbs.isEmpty) return;
     final kept = <XpOrbEntity>[];
     var gained = 0.0;
     for (final orb in state.xpOrbs) {
-      final dist = (orb.position - state.playerPosition).distance;
-      if (dist <= xpCollectRadius + orb.radius) {
+      var dist = (orb.position - state.playerPosition).distance;
+      if (state.magnetActive && dist > 1) {
+        final toPlayer = state.playerPosition - orb.position;
+        orb.position += toPlayer / dist * magnetOrbSpeed * dt;
+        dist = (orb.position - state.playerPosition).distance;
+      }
+      final collectR = state.magnetActive
+          ? 22.0 + orb.radius
+          : xpCollectRadius + orb.radius;
+      if (dist <= collectR) {
         gained += orb.amount;
       } else {
         kept.add(orb);

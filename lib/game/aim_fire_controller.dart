@@ -15,10 +15,17 @@ class AimFireController {
   bool _dragging = false;
   double _cooldownLeft = 0;
 
+  /// Visual-only fade for the on-player range ring (0–1).
+  double rangeIndicatorAlpha = 0;
+
+  /// Visual-only ring radius (px); does not affect fire logic.
+  static const double rangeIndicatorRadius = 190;
+
   bool get isAiming => _dragging && aim != Offset.zero;
 
   void onPanStart(Offset localDelta, double outerRadius) {
     _dragging = true;
+    state.aimFacingActive = true;
     _updateAim(localDelta, outerRadius);
   }
 
@@ -33,6 +40,13 @@ class AimFireController {
     }
     _dragging = false;
     aim = Offset.zero;
+    state.aimFacingActive = false;
+  }
+
+  void _beginReload() {
+    if (state.isReloading) return;
+    state.isReloading = true;
+    state.reloadTimer = GameState.reloadDurationSeconds;
   }
 
   void _updateAim(Offset localDelta, double outerRadius) {
@@ -50,11 +64,18 @@ class AimFireController {
       return;
     }
     aim = raw / len;
+    // Face toward aim while dragging (visual).
+    state.facingAngle = math.atan2(aim.dy, aim.dx);
   }
 
   void _fire() {
     final dir = aim;
     if (dir == Offset.zero) return;
+    if (state.isReloading) return;
+    if (state.currentAmmo <= 0) {
+      _beginReload();
+      return;
+    }
     state.projectiles.add(
       ProjectileEntity(
         position: state.playerPosition,
@@ -63,8 +84,12 @@ class AimFireController {
         damage: state.projectileDamage,
       ),
     );
+    state.currentAmmo -= 1;
     _cooldownLeft = state.fireCooldownSeconds;
     AudioManager.instance.playFire();
+    if (state.currentAmmo <= 0) {
+      _beginReload();
+    }
   }
 
   void update(Duration delta) {
@@ -73,6 +98,26 @@ class AimFireController {
 
     if (_cooldownLeft > 0) {
       _cooldownLeft = math.max(0, _cooldownLeft - dt);
+    }
+
+    if (state.isReloading) {
+      state.reloadTimer -= dt;
+      if (state.reloadTimer <= 0) {
+        state.reloadTimer = 0;
+        state.isReloading = false;
+        state.currentAmmo = state.maxAmmo;
+      }
+    }
+
+    // Fade range ring in while aiming, out on release/fire.
+    final target = isAiming ? 1.0 : 0.0;
+    final fadeSpeed = 7.0;
+    if (rangeIndicatorAlpha < target) {
+      rangeIndicatorAlpha =
+          math.min(target, rangeIndicatorAlpha + dt * fadeSpeed);
+    } else if (rangeIndicatorAlpha > target) {
+      rangeIndicatorAlpha =
+          math.max(target, rangeIndicatorAlpha - dt * fadeSpeed);
     }
 
     if (!state.isRunning) return;

@@ -5,6 +5,7 @@ import 'collision_service.dart';
 import 'enemy.dart';
 import 'enemy_spawner.dart';
 import 'game_state.dart';
+import 'magnet_spawner.dart';
 import 'player_controller.dart';
 
 typedef GameEndCallback = void Function({
@@ -25,7 +26,9 @@ class GameLoop {
   })  : player = PlayerController(state),
         aim = AimFireController(state),
         spawner = EnemySpawner(state),
+        magnet = MagnetSpawner(state),
         collision = CollisionService(state) {
+    collision.magnetSpawner = magnet;
     _ticker = vsync.createTicker(_onTick);
   }
 
@@ -33,6 +36,7 @@ class GameLoop {
   final PlayerController player;
   final AimFireController aim;
   final EnemySpawner spawner;
+  final MagnetSpawner magnet;
   final CollisionService collision;
 
   final void Function()? onPlayerDamaged;
@@ -77,6 +81,7 @@ class GameLoop {
       aim.update(clamped);
       EnemyBehavior.tickAll(state, clamped);
       spawner.update(clamped);
+      magnet.update(clamped);
       collision.update(clamped, onPlayerDamaged: onPlayerDamaged);
       state.tick(clamped);
     } else {

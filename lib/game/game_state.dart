@@ -1,9 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Runtime match state — HP, XP, timer, entities, and combat stats.
 class GameState extends ChangeNotifier {
   GameState({
     this.hollowDepth = 5,
+    this.playerCharacterId = 'wanderer',
     Duration matchDuration = const Duration(minutes: 20),
     double startingMaxHp = 100,
     double startingMoveSpeed = 175,
@@ -20,8 +23,18 @@ class GameState extends ChangeNotifier {
   final int hollowDepth;
   final Duration matchDuration;
 
+  /// Equipped character id (wanderer/huntress/scholar/brute/ghost).
+  String playerCharacterId;
+
   Offset playerPosition = Offset.zero;
   Size worldSize = Size.zero;
+
+  /// Aim/move facing in radians (0 = right, π/2 = down). Visual only.
+  double facingAngle = math.pi / 2;
+  /// When true, AIM stick owns [facingAngle] over move stick.
+  bool aimFacingActive = false;
+  bool playerMoving = false;
+  double walkAnimTime = 0;
 
   double playerHp;
   double maxHp;
@@ -42,12 +55,27 @@ class GameState extends ChangeNotifier {
   double projectileDamage;
   double fireCooldownSeconds;
 
+  /// Magazine — depletes on fire, reloads when empty.
+  int maxAmmo = 6;
+  int currentAmmo = 6;
+  bool isReloading = false;
+  double reloadTimer = 0;
+  static const double reloadDurationSeconds = 1.2;
+
+  /// Magnet power-up — when active, XP orbs drift from anywhere.
+  bool magnetActive = false;
+  double magnetTimeLeft = 0;
+  double magnetSpawnTimer = 0;
+  bool magnetSpawnArmed = false;
+
   int embersEarned = 0;
   String? lastPickupLabel;
 
   final List<EnemyEntity> enemies = [];
   final List<ProjectileEntity> projectiles = [];
   final List<XpOrbEntity> xpOrbs = [];
+  final List<ObstacleEntity> obstacles = [];
+  final List<MagnetPickupEntity> magnetPickups = [];
 
   bool get isRunning =>
       !isPaused && !isGameOver && !isWin && !awaitingLevelUp;
@@ -77,8 +105,78 @@ class GameState extends ChangeNotifier {
     worldSize = size;
     if (first) {
       playerPosition = Offset(size.width / 2, size.height / 2);
+      _spawnObstacles(size);
     }
     notifyListeners();
+  }
+
+  /// Places 4–6 static environment props with circular base collision.
+  void _spawnObstacles(Size size) {
+    obstacles.clear();
+    final rng = math.Random();
+    final count = 4 + rng.nextInt(3); // 4–6
+    final catalog = <({String asset, double radius, double drawW, double drawH})>[
+      (asset: 'assets/game/environment/tree_01.png', radius: 18, drawW: 56, drawH: 84),
+      (asset: 'assets/game/environment/tree_dead.png', radius: 20, drawW: 72, drawH: 58),
+      (asset: 'assets/game/environment/rock_01.png', radius: 16, drawW: 48, drawH: 48),
+      (asset: 'assets/game/environment/rock_02.png', radius: 16, drawW: 48, drawH: 48),
+      (asset: 'assets/game/environment/bush_green.png', radius: 15, drawW: 52, drawH: 52),
+      (asset: 'assets/game/environment/bush_dead.png', radius: 15, drawW: 52, drawH: 52),
+      (asset: 'assets/game/environment/bush_autumn.png', radius: 15, drawW: 52, drawH: 52),
+      (asset: 'assets/game/environment/bush_lime.png', radius: 15, drawW: 52, drawH: 52),
+    ];
+
+    final center = Offset(size.width / 2, size.height / 2);
+    var attempts = 0;
+    while (obstacles.length < count && attempts < 80) {
+      attempts++;
+      final entry = catalog[rng.nextInt(catalog.length)];
+      final pos = Offset(
+        40 + rng.nextDouble() * (size.width - 80),
+        40 + rng.nextDouble() * (size.height - 80),
+      );
+      // Keep clear of spawn center and other obstacle bases.
+      if ((pos - center).distance < 90) continue;
+      var overlaps = false;
+      for (final o in obstacles) {
+        if ((pos - o.position).distance < o.radius + entry.radius + 28) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (overlaps) continue;
+      obstacles.add(
+        ObstacleEntity(
+          position: pos,
+          radius: entry.radius,
+          assetPath: entry.asset,
+          drawWidth: entry.drawW,
+          drawHeight: entry.drawH,
+        ),
+      );
+    }
+  }
+
+  /// Push [position] outside overlapping obstacle circles (projectiles ignore).
+  static Offset resolveObstacleCollision(
+    Offset position,
+    double radius,
+    List<ObstacleEntity> obstacles,
+  ) {
+    var p = position;
+    for (final o in obstacles) {
+      final delta = p - o.position;
+      final minDist = radius + o.radius;
+      final distSq = delta.distanceSquared;
+      if (distSq >= minDist * minDist) continue;
+      if (distSq < 0.0001) {
+        p = o.position + Offset(minDist, 0);
+        continue;
+      }
+      final dist = math.sqrt(distSq);
+      p = o.position + delta * (minDist / dist);
+    }
+    return p;
   }
 
   void setPaused(bool value) {
@@ -165,6 +263,15 @@ class EnemyEntity {
   final double radius;
   final EnemyKind type;
 
+  /// Visual-only walk cycle clock (seconds).
+  double walkAnimTime = 0;
+
+  /// Visual-only: true when facing left (flip sprite).
+  bool facingLeft = false;
+
+  /// Visual-only: true while actively chasing this frame.
+  bool moving = false;
+
   bool get isDead => hp <= 0;
 }
 
@@ -195,5 +302,32 @@ class XpOrbEntity {
 
   Offset position;
   final double amount;
+  final double radius;
+}
+
+/// Static environment blocker — circular base collision only.
+class ObstacleEntity {
+  ObstacleEntity({
+    required this.position,
+    required this.radius,
+    required this.assetPath,
+    required this.drawWidth,
+    required this.drawHeight,
+  });
+
+  final Offset position;
+  final double radius;
+  final String assetPath;
+  final double drawWidth;
+  final double drawHeight;
+}
+
+class MagnetPickupEntity {
+  MagnetPickupEntity({
+    required this.position,
+    this.radius = 14,
+  });
+
+  Offset position;
   final double radius;
 }
