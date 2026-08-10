@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../audio/audio_manager.dart';
+import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
+import '../theme/themed_chrome.dart';
 
 enum ShopCategory { characters, weapons, runes }
 
@@ -61,9 +65,7 @@ class ShopItem {
 
 /// Shop / upgrades — tabbed catalog with purchase & equip bottom sheet.
 class ShopScreen extends StatefulWidget {
-  const ShopScreen({super.key, this.startingEmbers = 240});
-
-  final int startingEmbers;
+  const ShopScreen({super.key});
 
   @override
   State<ShopScreen> createState() => _ShopScreenState();
@@ -71,101 +73,105 @@ class ShopScreen extends StatefulWidget {
 
 class _ShopScreenState extends State<ShopScreen> {
   static const Color _charcoal = Color(0xFF0A0A0A);
-  static const Color _maroon = Color(0xFF8B1A1A);
 
-  late int _embers;
   ShopCategory _category = ShopCategory.characters;
 
-  late List<ShopItem> _items;
+  static const List<ShopItem> _catalog = [
+    ShopItem(
+      id: 'scholar',
+      name: 'Scholar',
+      category: ShopCategory.characters,
+      imageAsset: AppAssets.charScholarLocked,
+      ownedImageAsset: AppAssets.charScholar,
+      description:
+          'A cinder-touched mystic. Strong burst damage at the cost of frailty.',
+      price: 450,
+      owned: false,
+      statLabel: 'Power',
+      statCurrent: '—',
+      statUpgrade: 'High',
+    ),
+    ShopItem(
+      id: 'wanderer',
+      name: 'Wanderer',
+      category: ShopCategory.characters,
+      imageAsset: AppAssets.charWanderer,
+      ownedImageAsset: AppAssets.charWanderer,
+      description: 'Steadfast cloaked survivor of the dwindling light.',
+      price: 0,
+      owned: false,
+      statLabel: 'Power',
+      statCurrent: 'Balanced',
+      statUpgrade: 'Balanced',
+    ),
+    ShopItem(
+      id: 'blade',
+      name: 'Rust Blade',
+      category: ShopCategory.weapons,
+      imageAsset: AppAssets.iconEmbers,
+      description: 'A notched blade that still remembers blood.',
+      price: 0,
+      owned: false,
+      statLabel: 'Damage',
+      statCurrent: '12',
+      statUpgrade: '12',
+    ),
+    ShopItem(
+      id: 'axe',
+      name: 'Grave Axe',
+      category: ShopCategory.weapons,
+      imageAsset: AppAssets.iconLock,
+      description: 'Heavy swings that cleave the restless dead.',
+      price: 320,
+      owned: false,
+      statLabel: 'Damage',
+      statCurrent: '12',
+      statUpgrade: '22',
+    ),
+    ShopItem(
+      id: 'vein',
+      name: 'Vein Rune',
+      category: ShopCategory.runes,
+      imageAsset: AppAssets.iconHp,
+      description: 'Permanently increases max vitality.',
+      price: 180,
+      owned: false,
+      statLabel: 'HP',
+      statCurrent: '120',
+      statUpgrade: '145',
+    ),
+    ShopItem(
+      id: 'gale',
+      name: 'Gale Rune',
+      category: ShopCategory.runes,
+      imageAsset: AppAssets.iconEmbers,
+      description: 'Lightens your steps through choking fog.',
+      price: 210,
+      owned: false,
+      statLabel: 'Speed',
+      statCurrent: '8',
+      statUpgrade: '11',
+    ),
+  ];
 
-  @override
-  void initState() {
-    super.initState();
-    _embers = widget.startingEmbers;
-    _items = [
-      const ShopItem(
-        id: 'scholar',
-        name: 'Scholar',
-        category: ShopCategory.characters,
-        imageAsset: AppAssets.charScholarLocked,
-        ownedImageAsset: AppAssets.charScholar,
-        description:
-            'A cinder-touched mystic. Strong burst damage at the cost of frailty.',
-        price: 450,
-        owned: false,
-        statLabel: 'Power',
-        statCurrent: '—',
-        statUpgrade: 'High',
-      ),
-      const ShopItem(
-        id: 'wanderer',
-        name: 'Wanderer',
-        category: ShopCategory.characters,
-        imageAsset: AppAssets.charWanderer,
-        ownedImageAsset: AppAssets.charWanderer,
-        description: 'Steadfast cloaked survivor of the dwindling light.',
-        price: 0,
-        owned: true,
-        equipped: true,
-        statLabel: 'Power',
-        statCurrent: 'Balanced',
-        statUpgrade: 'Balanced',
-      ),
-      const ShopItem(
-        id: 'blade',
-        name: 'Rust Blade',
-        category: ShopCategory.weapons,
-        imageAsset: AppAssets.iconEmbers,
-        description: 'A notched blade that still remembers blood.',
-        price: 0,
-        owned: true,
-        equipped: true,
-        statLabel: 'Damage',
-        statCurrent: '12',
-        statUpgrade: '12',
-      ),
-      const ShopItem(
-        id: 'axe',
-        name: 'Grave Axe',
-        category: ShopCategory.weapons,
-        imageAsset: AppAssets.iconLock,
-        description: 'Heavy swings that cleave the restless dead.',
-        price: 320,
-        owned: false,
-        statLabel: 'Damage',
-        statCurrent: '12',
-        statUpgrade: '22',
-      ),
-      const ShopItem(
-        id: 'vein',
-        name: 'Vein Rune',
-        category: ShopCategory.runes,
-        imageAsset: AppAssets.iconHp,
-        description: 'Permanently increases max vitality.',
-        price: 180,
-        owned: false,
-        statLabel: 'HP',
-        statCurrent: '120',
-        statUpgrade: '145',
-      ),
-      const ShopItem(
-        id: 'gale',
-        name: 'Gale Rune',
-        category: ShopCategory.runes,
-        imageAsset: AppAssets.iconEmbers,
-        description: 'Lightens your steps through choking fog.',
-        price: 210,
-        owned: true,
-        equipped: false,
-        statLabel: 'Speed',
-        statCurrent: '8',
-        statUpgrade: '11',
-      ),
-    ];
+  ShopItem _resolve(ShopItem item, EconomyState economy) {
+    final owned = switch (item.category) {
+      ShopCategory.characters => economy.ownsCharacter(item.id),
+      ShopCategory.weapons => economy.ownsWeapon(item.id),
+      ShopCategory.runes => economy.ownsRune(item.id),
+    };
+    final equipped = switch (item.category) {
+      ShopCategory.characters => economy.equippedCharacterId == item.id,
+      ShopCategory.weapons => economy.equippedWeaponId == item.id,
+      ShopCategory.runes => economy.equippedRuneIds.contains(item.id),
+    };
+    return item.copyWith(owned: owned, equipped: equipped);
   }
 
-  List<ShopItem> get _filtered =>
-      _items.where((item) => item.category == _category).toList();
+  List<ShopItem> _filtered(EconomyState economy) => _catalog
+      .where((item) => item.category == _category)
+      .map((item) => _resolve(item, economy))
+      .toList();
 
   void _openItem(ShopItem item) {
     showModalBottomSheet<void>(
@@ -173,24 +179,31 @@ class _ShopScreenState extends State<ShopScreen> {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) {
-        return _ItemDetailSheet(
-          item: item,
-          embers: _embers,
-          onPurchase: () => _purchase(item),
-          onEquip: () => _equip(item),
+        return Consumer<EconomyState>(
+          builder: (context, economy, _) {
+            final live = _resolve(item, economy);
+            return _ItemDetailSheet(
+              item: live,
+              embers: economy.embers,
+              onPurchase: () => _purchase(live),
+              onEquip: () => _equip(live),
+            );
+          },
         );
       },
     );
   }
 
   void _purchase(ShopItem item) {
-    if (item.owned || _embers < item.price) return;
-    setState(() {
-      _embers -= item.price;
-      _items = _items
-          .map((i) => i.id == item.id ? i.copyWith(owned: true) : i)
-          .toList();
-    });
+    final economy = context.read<EconomyState>();
+    final ok = switch (item.category) {
+      ShopCategory.characters =>
+        economy.purchaseCharacter(item.id, item.price),
+      ShopCategory.weapons => economy.purchaseWeapon(item.id, item.price),
+      ShopCategory.runes => economy.purchaseRune(item.id, item.price),
+    };
+    if (!ok) return;
+    AudioManager.instance.playPurchase();
     Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -204,14 +217,15 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   void _equip(ShopItem item) {
-    if (!item.owned) return;
-    setState(() {
-      _items = _items.map((i) {
-        if (i.category != item.category) return i;
-        if (i.id == item.id) return i.copyWith(equipped: true);
-        return i.copyWith(equipped: false);
-      }).toList();
-    });
+    final economy = context.read<EconomyState>();
+    switch (item.category) {
+      case ShopCategory.characters:
+        economy.equipCharacter(item.id);
+      case ShopCategory.weapons:
+        economy.equipWeapon(item.id);
+      case ShopCategory.runes:
+        economy.equipRune(item.id);
+    }
     Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -226,6 +240,9 @@ class _ShopScreenState extends State<ShopScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final economy = context.watch<EconomyState>();
+    final items = _filtered(economy);
+
     return Scaffold(
       backgroundColor: _charcoal,
       body: SafeArea(
@@ -236,29 +253,22 @@ class _ShopScreenState extends State<ShopScreen> {
               padding: const EdgeInsets.fromLTRB(8, 4, 16, 8),
               child: Row(
                 children: [
-                  IconButton(
+                  ThemedBackButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back),
-                    color: _maroon,
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Image.asset(AppAssets.iconShop, width: 20, height: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Shop',
-                        style: TextStyle(
-                          fontFamily: 'serif',
-                          fontSize: 18,
-                          letterSpacing: 3,
-                          color: Colors.white.withValues(alpha: 0.85),
-                        ),
-                      ),
-                    ],
+                  const ThemedUiIcon(AppAssets.iconShop, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Shop',
+                    style: TextStyle(
+                      fontFamily: 'serif',
+                      fontSize: 18,
+                      letterSpacing: 3,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
                   ),
                   const Spacer(),
-                  _EmberBalance(amount: _embers),
+                  EmberBalanceChip(amount: economy.embers),
                 ],
               ),
             ),
@@ -279,9 +289,9 @@ class _ShopScreenState extends State<ShopScreen> {
                   crossAxisSpacing: 12,
                   childAspectRatio: 0.92,
                 ),
-                itemCount: _filtered.length,
+                itemCount: items.length,
                 itemBuilder: (context, index) {
-                  final item = _filtered[index];
+                  final item = items[index];
                   return _ShopCard(
                     item: item,
                     onTap: () => _openItem(item),
@@ -292,32 +302,6 @@ class _ShopScreenState extends State<ShopScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _EmberBalance extends StatelessWidget {
-  const _EmberBalance({required this.amount});
-
-  final int amount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Image.asset(AppAssets.iconEmbers, width: 18, height: 18),
-        const SizedBox(width: 6),
-        Text(
-          'Embers: $amount',
-          style: TextStyle(
-            fontFamily: 'serif',
-            fontSize: 14,
-            letterSpacing: 1.1,
-            color: Colors.white.withValues(alpha: 0.8),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -391,7 +375,7 @@ class _CategoryTabs extends StatelessWidget {
   }
 }
 
-class _ShopCard extends StatelessWidget {
+class _ShopCard extends StatefulWidget {
   const _ShopCard({
     required this.item,
     required this.onTap,
@@ -400,119 +384,175 @@ class _ShopCard extends StatelessWidget {
   final ShopItem item;
   final VoidCallback onTap;
 
+  @override
+  State<_ShopCard> createState() => _ShopCardState();
+}
+
+class _ShopCardState extends State<_ShopCard>
+    with SingleTickerProviderStateMixin {
   static const Color _maroon = Color(0xFF8B1A1A);
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
+  late final AnimationController _press;
+  late final Animation<double> _scale;
+  late final Animation<double> _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _press = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.94), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.94, end: 1.0), weight: 1.2),
+    ]).animate(CurvedAnimation(parent: _press, curve: Curves.easeOut));
+    _glow = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 1.4),
+    ]).animate(CurvedAnimation(parent: _press, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleTap() async {
+    await _press.forward(from: 0);
+    if (!mounted) return;
+    widget.onTap();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final item = widget.item;
     final locked = !item.owned;
 
     return GestureDetector(
-      onTap: onTap,
-      child: Opacity(
-        opacity: locked ? 0.55 : 1,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF121212),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: item.equipped
-                  ? _maroonGlow.withValues(alpha: 0.7)
-                  : Colors.white.withValues(alpha: 0.1),
-            ),
-            boxShadow: item.equipped
-                ? [
-                    BoxShadow(
-                      color: _maroonGlow.withValues(alpha: 0.2),
-                      blurRadius: 12,
-                    ),
-                  ]
-                : null,
-          ),
-          child: Stack(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: _maroon.withValues(alpha: 0.35),
+      onTap: _handleTap,
+      child: AnimatedBuilder(
+        animation: _press,
+        builder: (context, child) {
+          final glow = _glow.value;
+          return Transform.scale(
+            scale: _scale.value,
+            child: Opacity(
+              opacity: locked ? 0.55 : 1,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF121212),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Color.lerp(
+                      item.equipped
+                          ? _maroonGlow.withValues(alpha: 0.7)
+                          : Colors.white.withValues(alpha: 0.1),
+                      _maroonGlow,
+                      glow * 0.85,
+                    )!,
+                  ),
+                  boxShadow: [
+                    if (item.equipped || glow > 0.05)
+                      BoxShadow(
+                        color: _maroonGlow.withValues(
+                          alpha: (item.equipped ? 0.2 : 0.0) + glow * 0.45,
                         ),
+                        blurRadius: 12 + glow * 16,
+                        spreadRadius: glow * 1.2,
                       ),
-                      clipBehavior: Clip.antiAlias,
-                      child: item.displayImage != null
-                          ? Image.asset(
-                              item.displayImage!,
-                              fit: item.category == ShopCategory.characters
-                                  ? BoxFit.cover
-                                  : BoxFit.contain,
-                            )
-                          : Icon(
-                              item.icon ?? Icons.help_outline,
-                              size: 36,
-                              color: locked
-                                  ? Colors.white38
-                                  : _maroonGlow.withValues(alpha: 0.85),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    item.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: 'serif',
-                      fontSize: 13,
-                      letterSpacing: 0.8,
-                      color: Colors.white.withValues(alpha: 0.88),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    locked
-                        ? '${item.price} Embers'
-                        : item.equipped
-                            ? 'Equipped'
-                            : 'Owned',
-                    style: TextStyle(
-                      fontFamily: 'serif',
-                      fontSize: 11,
-                      letterSpacing: 0.6,
-                      color: locked
-                          ? Colors.white.withValues(alpha: 0.45)
-                          : item.equipped
-                              ? _maroonGlow
-                              : Colors.white.withValues(alpha: 0.4),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
+                child: child,
               ),
-              if (locked)
-                Positioned(
-                  top: 4,
-                  right: 4,
+            ),
+          );
+        },
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
                   child: Container(
-                    width: 20,
-                    height: 20,
-                    padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.7),
-                      shape: BoxShape.circle,
+                      color: Colors.black.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: _maroon.withValues(alpha: 0.35),
                       ),
                     ),
-                    child: Image.asset(AppAssets.iconLock, fit: BoxFit.contain),
+                    clipBehavior: Clip.antiAlias,
+                    child: item.displayImage != null
+                        ? Image.asset(
+                            item.displayImage!,
+                            fit: item.category == ShopCategory.characters
+                                ? BoxFit.cover
+                                : BoxFit.contain,
+                          )
+                        : Icon(
+                            item.icon ?? Icons.help_outline,
+                            size: 36,
+                            color: locked
+                                ? Colors.white38
+                                : _maroonGlow.withValues(alpha: 0.85),
+                          ),
                   ),
                 ),
-            ],
-          ),
+                const SizedBox(height: 10),
+                Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 13,
+                    letterSpacing: 0.8,
+                    color: Colors.white.withValues(alpha: 0.88),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  locked
+                      ? '${item.price} Embers'
+                      : item.equipped
+                          ? 'Equipped'
+                          : 'Owned',
+                  style: TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 11,
+                    letterSpacing: 0.6,
+                    color: locked
+                        ? Colors.white.withValues(alpha: 0.45)
+                        : item.equipped
+                            ? _maroonGlow
+                            : Colors.white.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
+            ),
+            if (locked)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Image.asset(AppAssets.iconLock, fit: BoxFit.contain),
+                ),
+              ),
+          ],
         ),
       ),
     );

@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../audio/audio_manager.dart';
+import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
 import '../theme/field_backdrop.dart';
+import '../theme/themed_chrome.dart';
 import 'character_select_screen.dart';
 import 'how_to_play_overlay.dart';
 import 'pre_game_setup_screen.dart';
@@ -39,6 +43,7 @@ class _MainMenuScreenState extends State<MainMenuScreen>
   @override
   void initState() {
     super.initState();
+    AudioManager.instance.playMusic();
 
     _fogController = AnimationController(
       vsync: this,
@@ -211,10 +216,11 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                   AnimatedBuilder(
                     animation: _chromePulse,
                     builder: (context, _) {
+                      final embers = context.watch<EconomyState>().embers;
                       return Row(
                         children: [
                           _EmberCurrency(
-                            amount: 240,
+                            amount: embers,
                             pulse: _chromePulse.value,
                           ),
                           const Spacer(),
@@ -237,10 +243,9 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                           _ChromeIconButton(
                             onPressed: () => _open(const SettingsScreen()),
                             pulse: _chromePulse.value,
-                            child: Image.asset(
+                            child: const ThemedUiIcon(
                               AppAssets.iconSettings,
-                              width: 18,
-                              height: 18,
+                              size: 18,
                             ),
                           ),
                         ],
@@ -357,16 +362,7 @@ class _EmberCurrency extends StatelessWidget {
         children: [
           Transform.scale(
             scale: 1.0 + pulse * 0.06,
-            child: Image.asset(
-              AppAssets.iconEmbers,
-              width: 18,
-              height: 18,
-              errorBuilder: (_, _, _) => Icon(
-                Icons.local_fire_department,
-                size: 18,
-                color: _maroonGlow.withValues(alpha: 0.9),
-              ),
-            ),
+            child: const ThemedUiIcon(AppAssets.iconEmbers, size: 18),
           ),
           const SizedBox(width: 8),
           Text(
@@ -448,6 +444,7 @@ class _ChromeIconButtonState extends State<_ChromeIconButton>
   }
 
   Future<void> _handleTap() async {
+    AudioManager.instance.playTap();
     await _press.forward(from: 0);
     if (!mounted) return;
     widget.onPressed();
@@ -594,6 +591,7 @@ class _MenuButtonState extends State<_MenuButton>
   }
 
   Future<void> _handleTap() async {
+    AudioManager.instance.playTap();
     await _press.forward(from: 0);
     if (!mounted) return;
     widget.onTap();

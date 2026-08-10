@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../audio/audio_manager.dart';
+import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
 import 'pre_game_setup_screen.dart';
 
-/// Hardcoded character used by the select carousel.
+/// Character roster entry used by the select carousel.
 class GameCharacter {
   const GameCharacter({
+    required this.id,
     required this.name,
-    required this.locked,
     required this.hp,
     required this.speed,
     required this.abilityIcon,
@@ -17,8 +20,8 @@ class GameCharacter {
     this.unlockCost = 0,
   });
 
+  final String id;
   final String name;
-  final bool locked;
   final int hp;
   final int speed;
   final IconData abilityIcon;
@@ -42,8 +45,8 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
 
   static const List<GameCharacter> _characters = [
     GameCharacter(
+      id: 'wanderer',
       name: 'Wanderer',
-      locked: false,
       hp: 120,
       speed: 8,
       abilityIcon: Icons.shield_moon_outlined,
@@ -52,8 +55,8 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
       lockedPortraitAsset: AppAssets.charWandererLocked,
     ),
     GameCharacter(
+      id: 'huntress',
       name: 'Huntress',
-      locked: false,
       hp: 85,
       speed: 14,
       abilityIcon: Icons.visibility_outlined,
@@ -62,8 +65,8 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
       lockedPortraitAsset: AppAssets.charHuntressLocked,
     ),
     GameCharacter(
+      id: 'scholar',
       name: 'Scholar',
-      locked: true,
       unlockCost: 450,
       hp: 95,
       speed: 11,
@@ -73,8 +76,8 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
       lockedPortraitAsset: AppAssets.charScholarLocked,
     ),
     GameCharacter(
+      id: 'brute',
       name: 'Brute',
-      locked: true,
       unlockCost: 700,
       hp: 140,
       speed: 6,
@@ -84,8 +87,8 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
       lockedPortraitAsset: AppAssets.charBruteLocked,
     ),
     GameCharacter(
+      id: 'ghost',
       name: 'Ghost',
-      locked: true,
       unlockCost: 950,
       hp: 110,
       speed: 12,
@@ -121,8 +124,9 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final economy = context.watch<EconomyState>();
     final selected = _selected;
-    final canSelect = !selected.locked;
+    final canSelect = economy.ownsCharacter(selected.id);
 
     return Scaffold(
       backgroundColor: _charcoal,
@@ -157,13 +161,15 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
                   final scale = 0.9 + (0.2 * t); // ~0.9 → 1.1
                   final opacity = 0.5 + (0.5 * t);
                   final isFocused = distance < 0.5;
+                  final character = _characters[index];
 
                   return Transform.scale(
                     scale: scale,
                     child: Opacity(
                       opacity: opacity,
                       child: _CharacterCard(
-                        character: _characters[index],
+                        character: character,
+                        locked: !economy.ownsCharacter(character.id),
                         focused: isFocused,
                       ),
                     ),
@@ -186,14 +192,12 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
                 enabled: canSelect,
                 onPressed: canSelect
                     ? () {
+                        economy.equipCharacter(selected.id);
                         Navigator.of(context).push(
                           PageRouteBuilder(
                             pageBuilder:
                                 (context, animation, secondaryAnimation) =>
-                                    PreGameSetupScreen(
-                              characterName: selected.name,
-                              portraitAsset: selected.portraitAsset,
-                            ),
+                                    const PreGameSetupScreen(),
                             transitionsBuilder: (
                               context,
                               animation,
@@ -220,47 +224,107 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
   }
 }
 
-class _CharacterCard extends StatelessWidget {
+class _CharacterCard extends StatefulWidget {
   const _CharacterCard({
     required this.character,
+    required this.locked,
     required this.focused,
   });
 
   final GameCharacter character;
+  final bool locked;
   final bool focused;
 
+  @override
+  State<_CharacterCard> createState() => _CharacterCardState();
+}
+
+class _CharacterCardState extends State<_CharacterCard>
+    with SingleTickerProviderStateMixin {
   static const Color _maroon = Color(0xFF8B1A1A);
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
+  late final AnimationController _glowPulse;
+  late final Animation<double> _breath;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowPulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    );
+    _breath = CurvedAnimation(parent: _glowPulse, curve: Curves.easeInOut);
+    if (widget.focused) {
+      _glowPulse.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CharacterCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focused && !oldWidget.focused) {
+      _glowPulse.repeat(reverse: true);
+    } else if (!widget.focused && oldWidget.focused) {
+      _glowPulse
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _glowPulse.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final character = widget.character;
+    final locked = widget.locked;
+    final focused = widget.focused;
+
     return Center(
-      child: Container(
-        width: 210,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: const Color(0xFF121212),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: focused
-                ? _maroonGlow
-                : Colors.white.withValues(alpha: 0.12),
-            width: focused ? 2 : 1,
-          ),
-          boxShadow: focused
-              ? [
-                  BoxShadow(
-                    color: _maroonGlow.withValues(alpha: 0.45),
-                    blurRadius: 22,
-                    spreadRadius: 1,
-                  ),
-                  BoxShadow(
-                    color: _maroon.withValues(alpha: 0.25),
-                    blurRadius: 40,
-                  ),
-                ]
-              : null,
-        ),
+      child: AnimatedBuilder(
+        animation: _breath,
+        builder: (context, child) {
+          final pulse = focused ? _breath.value : 0.0;
+          final borderColor = focused
+              ? Color.lerp(
+                  _maroon.withValues(alpha: 0.75),
+                  _maroonGlow,
+                  0.35 + pulse * 0.65,
+                )!
+              : Colors.white.withValues(alpha: 0.12);
+          return Container(
+            width: 210,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF121212),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: borderColor,
+                width: focused ? 2 : 1,
+              ),
+              boxShadow: focused
+                  ? [
+                      BoxShadow(
+                        color: _maroonGlow.withValues(
+                          alpha: 0.28 + pulse * 0.32,
+                        ),
+                        blurRadius: 16 + pulse * 14,
+                        spreadRadius: 0.5 + pulse * 1.5,
+                      ),
+                      BoxShadow(
+                        color: _maroon.withValues(alpha: 0.2 + pulse * 0.12),
+                        blurRadius: 36,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: child,
+          );
+        },
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -272,12 +336,12 @@ class _CharacterCard extends StatelessWidget {
                   fit: StackFit.expand,
                   children: [
                     Image.asset(
-                      character.locked
+                      locked
                           ? character.lockedPortraitAsset
                           : character.portraitAsset,
                       fit: BoxFit.cover,
                     ),
-                    if (character.locked)
+                    if (locked)
                       ColoredBox(
                         color: Colors.black.withValues(alpha: 0.45),
                         child: Column(
@@ -320,12 +384,12 @@ class _CharacterCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              character.locked ? 'Locked' : 'Unlocked',
+              locked ? 'Locked' : 'Unlocked',
               style: TextStyle(
                 fontFamily: 'serif',
                 fontSize: 11,
                 letterSpacing: 1.2,
-                color: character.locked
+                color: locked
                     ? Colors.white.withValues(alpha: 0.35)
                     : _maroonGlow.withValues(alpha: 0.85),
               ),
@@ -482,7 +546,12 @@ class _SelectButton extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: onPressed,
+          onTap: onPressed == null
+              ? null
+              : () {
+                  AudioManager.instance.playTap();
+                  onPressed!();
+                },
           borderRadius: BorderRadius.circular(4),
           child: Ink(
             width: double.infinity,

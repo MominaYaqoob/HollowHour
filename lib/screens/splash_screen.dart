@@ -4,7 +4,7 @@ import '../theme/app_assets.dart';
 import '../theme/field_backdrop.dart';
 import 'main_menu_screen.dart';
 
-/// Splash — app-icon entrance matching the HTML demo (no horizontal wordmark).
+/// Splash — app-icon entrance, hourglass accent, tap to enter main menu.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -120,6 +120,19 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final h = size.height;
+    final w = size.width;
+
+    // Proportional scale — logo dominant, hourglass accent, tap grounded.
+    final logoSize = (h * 0.18).clamp(120.0, 168.0);
+    final gapLogoToHourglass = h * 0.042;
+    final gapAboveTap = h * 0.06;
+    final bottomInset = h * 0.10;
+    final hourglassW = (w * 0.085).clamp(30.0, 40.0);
+    final hourglassH = hourglassW * 1.45;
+    final tapFontSize = (h * 0.0195).clamp(14.0, 17.0);
+
     return Scaffold(
       backgroundColor: _charcoal,
       body: GestureDetector(
@@ -132,7 +145,6 @@ class _SplashScreenState extends State<SplashScreen>
             AnimatedBuilder(
               animation: _fogController,
               builder: (context, _) {
-                final size = MediaQuery.sizeOf(context);
                 final driftX = _fogDrift.value * size.width;
                 return Opacity(
                   opacity: _fogOpacity.value,
@@ -175,80 +187,109 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
             ),
-            Center(
+            // Hierarchy: centered logo+hourglass cluster, tap near bottom.
+            SafeArea(
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  AnimatedBuilder(
-                    animation: Listenable.merge([_iconController, _glowController]),
-                    builder: (context, _) {
-                      return Opacity(
-                        opacity: _iconOpacity.value,
-                        child: Transform.scale(
-                          scale: _iconScale.value,
-                          child: Container(
-                            width: 140,
-                            height: 140,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(26),
-                              border: Border.all(
-                                color: const Color(0xFF8B1A1A).withValues(alpha: 0.45),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFFC41E1E).withValues(
-                                    alpha: _showSecondary ? _glowPulse.value : 0.2,
+                  Expanded(
+                    child: Align(
+                      alignment: const Alignment(0, -0.12),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AnimatedBuilder(
+                            animation: Listenable.merge([
+                              _iconController,
+                              _glowController,
+                            ]),
+                            builder: (context, _) {
+                              return Opacity(
+                                opacity: _iconOpacity.value,
+                                child: Transform.scale(
+                                  scale: _iconScale.value,
+                                  child: Container(
+                                    width: logoSize,
+                                    height: logoSize,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(
+                                        logoSize * 0.185,
+                                      ),
+                                      border: Border.all(
+                                        color: const Color(0xFF8B1A1A)
+                                            .withValues(alpha: 0.45),
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color:
+                                              const Color(0xFFC41E1E).withValues(
+                                            alpha: _showSecondary
+                                                ? _glowPulse.value
+                                                : 0.2,
+                                          ),
+                                          blurRadius:
+                                              _showSecondary ? 28 : 10,
+                                          spreadRadius:
+                                              _showSecondary ? 2 : 0,
+                                        ),
+                                      ],
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: Image.asset(
+                                      AppAssets.brandingIcon,
+                                      fit: BoxFit.cover,
+                                    ),
                                   ),
-                                  blurRadius: _showSecondary ? 28 : 10,
-                                  spreadRadius: _showSecondary ? 2 : 0,
                                 ),
-                              ],
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: Image.asset(
-                              AppAssets.brandingIcon,
-                              fit: BoxFit.cover,
-                            ),
+                              );
+                            },
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 28),
-                  if (_showSecondary)
-                    AnimatedBuilder(
-                      animation: _sandController,
-                      builder: (context, _) {
-                        return CustomPaint(
-                          size: const Size(36, 52),
-                          painter: _HourglassPainter(progress: _sandFall.value),
-                        );
-                      },
+                          SizedBox(height: gapLogoToHourglass),
+                          SizedBox(
+                            width: hourglassW,
+                            height: hourglassH,
+                            child: _showSecondary
+                                ? AnimatedBuilder(
+                                    animation: _sandController,
+                                    builder: (context, _) {
+                                      return CustomPaint(
+                                        size: Size(hourglassW, hourglassH),
+                                        painter: _HourglassPainter(
+                                          progress: _sandFall.value,
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
                     ),
+                  ),
+                  SizedBox(height: gapAboveTap),
+                  _showSecondary
+                      ? AnimatedBuilder(
+                          animation: _tapPulseController,
+                          builder: (context, _) {
+                            return Opacity(
+                              opacity: _tapOpacity.value,
+                              child: Text(
+                                'Tap to Begin',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: 'serif',
+                                  fontSize: tapFontSize,
+                                  letterSpacing: 3.5,
+                                  color:
+                                      Colors.white.withValues(alpha: 0.75),
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : SizedBox(height: tapFontSize * 1.35),
+                  SizedBox(height: bottomInset),
                 ],
               ),
-            ),
-            Align(
-              alignment: const Alignment(0, 0.55),
-              child: _showSecondary
-                  ? AnimatedBuilder(
-                      animation: _tapPulseController,
-                      builder: (context, _) {
-                        return Opacity(
-                          opacity: _tapOpacity.value,
-                          child: Text(
-                            'Tap to Begin',
-                            style: TextStyle(
-                              fontFamily: 'serif',
-                              fontSize: 16,
-                              letterSpacing: 3.5,
-                              color: Colors.white.withValues(alpha: 0.75),
-                            ),
-                          ),
-                        );
-                      },
-                    )
-                  : const SizedBox.shrink(),
             ),
           ],
         ),

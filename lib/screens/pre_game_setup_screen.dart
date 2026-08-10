@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../audio/audio_manager.dart';
+import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
 import 'gameplay_hud_screen.dart';
 
@@ -7,26 +10,29 @@ enum GameMode { standard, quick, endless }
 
 class _WeaponOption {
   const _WeaponOption({
+    required this.id,
     required this.name,
     required this.icon,
-    required this.locked,
+  });
+
+  final String id;
+  final String name;
+  final IconData icon;
+}
+
+class _CharacterLoadout {
+  const _CharacterLoadout({
+    required this.name,
+    required this.portraitAsset,
   });
 
   final String name;
-  final IconData icon;
-  final bool locked;
+  final String portraitAsset;
 }
 
 /// Pre-game setup — character preview, weapon, mode, and Hollow Depth.
 class PreGameSetupScreen extends StatefulWidget {
-  const PreGameSetupScreen({
-    super.key,
-    this.characterName = 'Wanderer',
-    this.portraitAsset = AppAssets.charWanderer,
-  });
-
-  final String characterName;
-  final String portraitAsset;
+  const PreGameSetupScreen({super.key});
 
   @override
   State<PreGameSetupScreen> createState() => _PreGameSetupScreenState();
@@ -38,31 +44,54 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
   static const Color _maroon = Color(0xFF8B1A1A);
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
+  static const Map<String, _CharacterLoadout> _characters = {
+    'wanderer': _CharacterLoadout(
+      name: 'Wanderer',
+      portraitAsset: AppAssets.charWanderer,
+    ),
+    'huntress': _CharacterLoadout(
+      name: 'Huntress',
+      portraitAsset: AppAssets.charHuntress,
+    ),
+    'scholar': _CharacterLoadout(
+      name: 'Scholar',
+      portraitAsset: AppAssets.charScholar,
+    ),
+    'brute': _CharacterLoadout(
+      name: 'Brute',
+      portraitAsset: AppAssets.charBrute,
+    ),
+    'ghost': _CharacterLoadout(
+      name: 'Ghost',
+      portraitAsset: AppAssets.charGhost,
+    ),
+  };
+
   static const List<_WeaponOption> _weapons = [
     _WeaponOption(
+      id: 'blade',
       name: 'Rust Blade',
       icon: Icons.sports_martial_arts,
-      locked: false,
     ),
     _WeaponOption(
+      id: 'pistol',
       name: 'Ember Pistol',
       icon: Icons.flare,
-      locked: false,
     ),
     _WeaponOption(
+      id: 'axe',
       name: 'Grave Axe',
       icon: Icons.hardware_outlined,
-      locked: true,
     ),
     _WeaponOption(
+      id: 'staff',
       name: 'Void Staff',
       icon: Icons.auto_awesome,
-      locked: true,
     ),
     _WeaponOption(
+      id: 'bow',
       name: 'Hollow Bow',
       icon: Icons.north_east,
-      locked: true,
     ),
   ];
 
@@ -70,7 +99,6 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
   late final Animation<double> _fogDrift;
   late final Animation<double> _fogOpacity;
 
-  int _selectedWeapon = 0;
   GameMode _mode = GameMode.standard;
   double _hollowDepth = 5;
 
@@ -101,6 +129,13 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
+    final economy = context.watch<EconomyState>();
+    final characterId = economy.equippedCharacterId ?? 'wanderer';
+    final character = _characters[characterId] ?? _characters['wanderer']!;
+    final selectedWeaponId = economy.equippedWeaponId ?? 'blade';
+    final selectedWeaponIndex = _weapons
+        .indexWhere((w) => w.id == selectedWeaponId)
+        .clamp(0, _weapons.length - 1);
 
     return Scaffold(
       backgroundColor: _charcoal,
@@ -161,8 +196,8 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _CharacterPreview(
-                    name: widget.characterName,
-                    portraitAsset: widget.portraitAsset,
+                    name: character.name,
+                    portraitAsset: character.portraitAsset,
                   ),
                   const SizedBox(height: 28),
                   _SectionLabel('Weapon'),
@@ -175,12 +210,14 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
                       separatorBuilder: (_, _) => const SizedBox(width: 10),
                       itemBuilder: (context, index) {
                         final weapon = _weapons[index];
+                        final locked = !economy.ownsWeapon(weapon.id);
                         return _WeaponChip(
                           weapon: weapon,
-                          selected: _selectedWeapon == index,
-                          onTap: weapon.locked
+                          locked: locked,
+                          selected: selectedWeaponIndex == index,
+                          onTap: locked
                               ? null
-                              : () => setState(() => _selectedWeapon = index),
+                              : () => economy.equipWeapon(weapon.id),
                         );
                       },
                     ),
@@ -247,23 +284,25 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
                   const Spacer(),
                   _BeginButton(
                     onPressed: () {
+                      final depth = _hollowDepth.round();
                       Navigator.of(context).pushReplacement(
                         PageRouteBuilder(
                           pageBuilder:
                               (context, animation, secondaryAnimation) =>
-                                  const GameplayHudScreen(),
+                                  GameplayHudScreen(hollowDepth: depth),
                           transitionsBuilder: (
                             context,
                             animation,
                             secondaryAnimation,
                             child,
                           ) {
-                            return FadeTransition(
-                              opacity: animation,
+                            return _FogMatchEnterTransition(
+                              animation: animation,
                               child: child,
                             );
                           },
-                          transitionDuration: const Duration(milliseconds: 600),
+                          transitionDuration:
+                              const Duration(milliseconds: 1100),
                         ),
                       );
                     },
@@ -364,11 +403,13 @@ class _CharacterPreview extends StatelessWidget {
 class _WeaponChip extends StatelessWidget {
   const _WeaponChip({
     required this.weapon,
+    required this.locked,
     required this.selected,
     required this.onTap,
   });
 
   final _WeaponOption weapon;
+  final bool locked;
   final bool selected;
   final VoidCallback? onTap;
 
@@ -376,7 +417,6 @@ class _WeaponChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final locked = weapon.locked;
     final active = selected && !locked;
 
     return GestureDetector(
@@ -617,6 +657,7 @@ class _BeginButtonState extends State<_BeginButton>
   }
 
   Future<void> _handleTap() async {
+    AudioManager.instance.playTap();
     await _controller.forward(from: 0);
     if (!mounted) return;
     widget.onPressed();
@@ -702,6 +743,96 @@ class _FogBlob extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Prepare → HUD: fog rises mid-transition, then clears into the match.
+class _FogMatchEnterTransition extends StatelessWidget {
+  const _FogMatchEnterTransition({
+    required this.animation,
+    required this.child,
+  });
+
+  final Animation<double> animation;
+  final Widget child;
+
+  static const Color _charcoal = Color(0xFF0A0A0A);
+  static const Color _maroon = Color(0xFF8B1A1A);
+
+  @override
+  Widget build(BuildContext context) {
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeInOutCubic,
+    );
+
+    return AnimatedBuilder(
+      animation: curved,
+      builder: (context, _) {
+        final t = curved.value;
+        // Fog peaks around mid-transition, then dissolves.
+        final fog = (1.0 - ((t - 0.48).abs() * 2.15)).clamp(0.0, 1.0);
+        final childOpacity = Interval(0.38, 1.0, curve: Curves.easeOut)
+            .transform(t);
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Opacity(
+              opacity: childOpacity,
+              child: child,
+            ),
+            IgnorePointer(
+              child: Opacity(
+                opacity: fog,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: const Alignment(0, 0.15),
+                      radius: 1.15,
+                      colors: [
+                        const Color(0xFF2A2222).withValues(alpha: 0.55),
+                        _charcoal.withValues(alpha: 0.88),
+                        _charcoal,
+                      ],
+                      stops: const [0.0, 0.45, 1.0],
+                    ),
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Align(
+                        alignment: Alignment(0, -0.2 + t * 0.15),
+                        child: Container(
+                          width: MediaQuery.sizeOf(context).width * 1.2,
+                          height: MediaQuery.sizeOf(context).height * 0.4,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(200),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF3A3030)
+                                    .withValues(alpha: 0.55),
+                                blurRadius: 70,
+                                spreadRadius: 40,
+                              ),
+                              BoxShadow(
+                                color: _maroon.withValues(alpha: 0.12),
+                                blurRadius: 50,
+                                spreadRadius: 20,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

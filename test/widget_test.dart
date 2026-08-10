@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hollow_hour/audio/audio_manager.dart';
 import 'package:hollow_hour/main.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await AudioManager.instance.init();
+  });
 
   testWidgets('Onboarding shows when flag is unset', (tester) async {
     SharedPreferences.setMockInitialValues({});

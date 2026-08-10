@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../audio/audio_manager.dart';
 import '../theme/app_assets.dart';
+import '../theme/themed_chrome.dart';
 
-/// Settings — local toggles only (no persistence yet).
+/// Settings — audio toggles wired to [AudioManager] (persisted).
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -15,11 +17,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const Color _maroon = Color(0xFF8B1A1A);
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
-  bool _sfx = true;
-  bool _music = true;
+  late bool _sfx;
+  late bool _music;
   bool _vibration = true;
 
+  @override
+  void initState() {
+    super.initState();
+    final audio = AudioManager.instance;
+    _sfx = audio.sfxEnabled;
+    _music = audio.musicEnabled;
+  }
+
   Future<void> _confirmReset() async {
+    AudioManager.instance.playTap();
     await showDialog<void>(
       context: context,
       builder: (context) {
@@ -48,7 +59,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                AudioManager.instance.playTap();
+                Navigator.of(context).pop();
+              },
               child: Text(
                 'Cancel',
                 style: TextStyle(
@@ -58,7 +72,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                AudioManager.instance.playTap();
+                Navigator.of(context).pop();
+              },
               child: Text(
                 'Reset',
                 style: TextStyle(
@@ -81,15 +98,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: _maroon),
-        title: Text(
-          'Settings',
-          style: TextStyle(
-            fontFamily: 'serif',
-            fontSize: 18,
-            letterSpacing: 3,
-            color: Colors.white.withValues(alpha: 0.85),
-          ),
+        automaticallyImplyLeading: false,
+        leading: ThemedBackButton(
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ThemedUiIcon(AppAssets.iconSettings, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Settings',
+              style: TextStyle(
+                fontFamily: 'serif',
+                fontSize: 18,
+                letterSpacing: 3,
+                color: Colors.white.withValues(alpha: 0.85),
+              ),
+            ),
+          ],
         ),
       ),
       body: ListView(
@@ -100,12 +127,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _ToggleRow(
             label: 'Sound Effects',
             value: _sfx,
-            onChanged: (v) => setState(() => _sfx = v),
+            onChanged: (v) async {
+              setState(() => _sfx = v);
+              await AudioManager.instance.setSfxEnabled(v);
+              if (v) AudioManager.instance.playTap();
+            },
           ),
           _ToggleRow(
             label: 'Music',
             value: _music,
-            onChanged: (v) => setState(() => _music = v),
+            onChanged: (v) async {
+              setState(() => _music = v);
+              await AudioManager.instance.setMusicEnabled(v);
+            },
           ),
           const SizedBox(height: 20),
           _sectionLabel('Device'),

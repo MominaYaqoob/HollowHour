@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../audio/audio_manager.dart';
+import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
+import '../theme/themed_chrome.dart';
 
 class _TalentNode {
   _TalentNode({
@@ -15,7 +19,6 @@ class _TalentNode {
     required this.baseCost,
     required this.requiresId,
     this.imageAsset,
-    this.level = 0,
   });
 
   final String id;
@@ -29,7 +32,7 @@ class _TalentNode {
   final String unit;
   final int baseCost;
   final String? requiresId;
-  int level;
+  int level = 0;
 
   bool get isMaxed => level >= maxLevel;
   int get nextCost => baseCost + (level * 40);
@@ -45,11 +48,9 @@ class _TalentNode {
   }
 }
 
-/// Permanent talent upgrades mockup — local setState only.
+/// Permanent talent upgrades — reads/writes [EconomyState].
 class TalentTreeScreen extends StatefulWidget {
-  const TalentTreeScreen({super.key, this.startingEmbers = 240});
-
-  final int startingEmbers;
+  const TalentTreeScreen({super.key});
 
   @override
   State<TalentTreeScreen> createState() => _TalentTreeScreenState();
@@ -57,19 +58,16 @@ class TalentTreeScreen extends StatefulWidget {
 
 class _TalentTreeScreenState extends State<TalentTreeScreen> {
   static const Color _charcoal = Color(0xFF0A0A0A);
-  static const Color _maroon = Color(0xFF8B1A1A);
 
-  late int _embers;
-  late List<_TalentNode> _nodes;
+  late final List<_TalentNode> _nodes;
   String? _selectedId;
 
   @override
   void initState() {
     super.initState();
-    _embers = widget.startingEmbers;
     _nodes = [
       _TalentNode(
-        id: 'vitality',
+        id: 'maxhp',
         name: 'Max HP',
         icon: Icons.favorite_border,
         imageAsset: AppAssets.iconHp,
@@ -80,10 +78,9 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
         unit: ' HP',
         baseCost: 120,
         requiresId: null,
-        level: 2,
       ),
       _TalentNode(
-        id: 'ferocity',
+        id: 'damage',
         name: 'Damage',
         icon: Icons.flash_on_outlined,
         description: 'Sharpen every strike that leaves your hand.',
@@ -92,11 +89,10 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
         perLevel: 2,
         unit: ' DMG',
         baseCost: 90,
-        requiresId: 'vitality',
-        level: 1,
+        requiresId: 'maxhp',
       ),
       _TalentNode(
-        id: 'swiftness',
+        id: 'speed',
         name: 'Speed',
         icon: Icons.speed,
         description: 'Move more freely through choking fog.',
@@ -105,11 +101,10 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
         perLevel: 0.1,
         unit: 'x',
         baseCost: 85,
-        requiresId: 'vitality',
-        level: 0,
+        requiresId: 'maxhp',
       ),
       _TalentNode(
-        id: 'fortune',
+        id: 'luck',
         name: 'Luck',
         icon: Icons.auto_awesome,
         description: 'Draw more embers and XP from the Hollow.',
@@ -118,8 +113,7 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
         perLevel: 8,
         unit: '% XP',
         baseCost: 100,
-        requiresId: 'ferocity',
-        level: 0,
+        requiresId: 'damage',
       ),
       _TalentNode(
         id: 'warding',
@@ -131,8 +125,7 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
         perLevel: 4,
         unit: '% DEF',
         baseCost: 95,
-        requiresId: 'swiftness',
-        level: 0,
+        requiresId: 'speed',
       ),
       _TalentNode(
         id: 'emberheart',
@@ -145,10 +138,15 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
         perLevel: 10,
         unit: '% LUCK',
         baseCost: 140,
-        requiresId: 'fortune',
-        level: 0,
+        requiresId: 'luck',
       ),
     ];
+  }
+
+  void _syncLevels(EconomyState economy) {
+    for (final node in _nodes) {
+      node.level = economy.talentLevel(node.id);
+    }
   }
 
   _TalentNode? get _selected {
@@ -162,17 +160,17 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
     return req.level > 0;
   }
 
-  void _upgrade(_TalentNode node) {
+  void _upgrade(_TalentNode node, EconomyState economy) {
     if (!_isUnlocked(node) || node.isMaxed) return;
-    if (_embers < node.nextCost) return;
-    setState(() {
-      _embers -= node.nextCost;
-      node.level += 1;
-    });
+    if (economy.upgradeTalent(node.id, node.nextCost)) {
+      AudioManager.instance.playPurchase();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final economy = context.watch<EconomyState>();
+    _syncLevels(economy);
     final selected = _selected;
 
     return Scaffold(
@@ -184,11 +182,11 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
               padding: const EdgeInsets.fromLTRB(8, 4, 16, 8),
               child: Row(
                 children: [
-                  IconButton(
+                  ThemedBackButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back),
-                    color: _maroon,
                   ),
+                  const ThemedUiIcon(AppAssets.iconEmbers, size: 20),
+                  const SizedBox(width: 8),
                   Text(
                     'Talents',
                     style: TextStyle(
@@ -199,7 +197,7 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
                     ),
                   ),
                   const Spacer(),
-                  _EmberBalance(amount: _embers),
+                  EmberBalanceChip(amount: economy.embers),
                 ],
               ),
             ),
@@ -224,35 +222,32 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
                       child: CustomPaint(
                         painter: _TreeLinesPainter(
                           unlocked: {
-                            for (final n in _nodes) n.id: _isUnlocked(n) && n.level > 0,
+                            for (final n in _nodes)
+                              n.id: _isUnlocked(n) && n.level > 0,
                           },
                         ),
                         child: Stack(
                           children: [
-                            // Tier 0 — root
                             Align(
                               alignment: const Alignment(0, -0.95),
-                              child: _buildNodeChip('vitality'),
+                              child: _buildNodeChip('maxhp'),
                             ),
-                            // Tier 1
                             Align(
                               alignment: const Alignment(-0.7, -0.35),
-                              child: _buildNodeChip('ferocity'),
+                              child: _buildNodeChip('damage'),
                             ),
                             Align(
                               alignment: const Alignment(0.7, -0.35),
-                              child: _buildNodeChip('swiftness'),
+                              child: _buildNodeChip('speed'),
                             ),
-                            // Tier 2
                             Align(
                               alignment: const Alignment(-0.7, 0.25),
-                              child: _buildNodeChip('fortune'),
+                              child: _buildNodeChip('luck'),
                             ),
                             Align(
                               alignment: const Alignment(0.7, 0.25),
                               child: _buildNodeChip('warding'),
                             ),
-                            // Tier 3
                             Align(
                               alignment: const Alignment(0, 0.9),
                               child: _buildNodeChip('emberheart'),
@@ -266,8 +261,8 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
                       _TalentDetailCard(
                         node: selected,
                         unlocked: _isUnlocked(selected),
-                        canAfford: _embers >= selected.nextCost,
-                        onUpgrade: () => _upgrade(selected),
+                        canAfford: economy.embers >= selected.nextCost,
+                        onUpgrade: () => _upgrade(selected, economy),
                       ),
                     ],
                   ],
@@ -293,33 +288,7 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
   }
 }
 
-class _EmberBalance extends StatelessWidget {
-  const _EmberBalance({required this.amount});
-
-  final int amount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Image.asset(AppAssets.iconEmbers, width: 18, height: 18),
-        const SizedBox(width: 6),
-        Text(
-          'Embers: $amount',
-          style: TextStyle(
-            fontFamily: 'serif',
-            fontSize: 14,
-            letterSpacing: 1.1,
-            color: Colors.white.withValues(alpha: 0.8),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _TalentNodeChip extends StatelessWidget {
+class _TalentNodeChip extends StatefulWidget {
   const _TalentNodeChip({
     required this.node,
     required this.unlocked,
@@ -332,102 +301,158 @@ class _TalentNodeChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  @override
+  State<_TalentNodeChip> createState() => _TalentNodeChipState();
+}
+
+class _TalentNodeChipState extends State<_TalentNodeChip>
+    with SingleTickerProviderStateMixin {
   static const Color _maroon = Color(0xFF8B1A1A);
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
+  late final AnimationController _press;
+  late final Animation<double> _scale;
+  late final Animation<double> _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _press = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.92), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.92, end: 1.0), weight: 1.2),
+    ]).animate(CurvedAnimation(parent: _press, curve: Curves.easeOut));
+    _glow = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 1.4),
+    ]).animate(CurvedAnimation(parent: _press, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleTap() async {
+    await _press.forward(from: 0);
+    if (!mounted) return;
+    widget.onTap();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final node = widget.node;
+    final unlocked = widget.unlocked;
+    final selected = widget.selected;
     final active = unlocked && node.level > 0;
 
     return GestureDetector(
-      onTap: onTap,
-      child: Opacity(
-        opacity: unlocked ? 1 : 0.4,
-        child: Container(
-          width: 96,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF121212),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected
-                  ? _maroonGlow
-                  : active
-                      ? _maroon.withValues(alpha: 0.75)
-                      : Colors.white.withValues(alpha: 0.12),
-              width: selected ? 1.8 : 1.1,
-            ),
-            boxShadow: selected || active
-                ? [
-                    BoxShadow(
-                      color: _maroonGlow.withValues(
-                        alpha: selected ? 0.4 : 0.18,
-                      ),
-                      blurRadius: selected ? 14 : 8,
-                    ),
-                  ]
-                : null,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (node.imageAsset != null)
-                    Opacity(
-                      opacity: unlocked ? 1 : 0.45,
-                      child: Image.asset(
-                        node.imageAsset!,
-                        width: 26,
-                        height: 26,
-                      ),
-                    )
-                  else
-                    Icon(
-                      node.icon,
-                      size: 26,
-                      color: unlocked
-                          ? _maroonGlow.withValues(alpha: 0.9)
-                          : Colors.white38,
-                    ),
-                  if (!unlocked)
-                    Image.asset(AppAssets.iconLock, width: 14, height: 14),
-                ],
+      onTap: _handleTap,
+      child: AnimatedBuilder(
+        animation: _press,
+        builder: (context, child) {
+          final glow = _glow.value;
+          final baseBorder = selected
+              ? _maroonGlow
+              : active
+                  ? _maroon.withValues(alpha: 0.75)
+                  : Colors.white.withValues(alpha: 0.12);
+          return Transform.scale(
+            scale: _scale.value,
+            child: Opacity(
+              opacity: unlocked ? 1 : 0.4,
+              child: Container(
+                width: 96,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF121212),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Color.lerp(baseBorder, _maroonGlow, glow * 0.9)!,
+                    width: selected || glow > 0.2 ? 1.8 : 1.1,
+                  ),
+                  boxShadow: selected || active || glow > 0.05
+                      ? [
+                          BoxShadow(
+                            color: _maroonGlow.withValues(
+                              alpha: (selected ? 0.4 : active ? 0.18 : 0.0) +
+                                  glow * 0.5,
+                            ),
+                            blurRadius: (selected ? 14 : 8) + glow * 12,
+                            spreadRadius: glow * 1.1,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: child,
               ),
-              const SizedBox(height: 6),
+            ),
+          );
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                if (node.imageAsset != null)
+                  Opacity(
+                    opacity: unlocked ? 1 : 0.45,
+                    child: Image.asset(
+                      node.imageAsset!,
+                      width: 26,
+                      height: 26,
+                    ),
+                  )
+                else
+                  Icon(
+                    node.icon,
+                    size: 26,
+                    color: unlocked
+                        ? _maroonGlow.withValues(alpha: 0.9)
+                        : Colors.white38,
+                  ),
+                if (!unlocked)
+                  Image.asset(AppAssets.iconLock, width: 14, height: 14),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              node.name,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'serif',
+                fontSize: 11,
+                letterSpacing: 0.6,
+                color: Colors.white.withValues(alpha: 0.85),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${node.level}/${node.maxLevel}',
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 11,
+                color: Colors.white.withValues(alpha: 0.45),
+              ),
+            ),
+            if (!node.isMaxed && unlocked)
               Text(
-                node.name,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                '${node.nextCost}',
                 style: TextStyle(
                   fontFamily: 'serif',
-                  fontSize: 11,
-                  letterSpacing: 0.6,
-                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 10,
+                  color: _maroonGlow.withValues(alpha: 0.75),
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                '${node.level}/${node.maxLevel}',
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  color: Colors.white.withValues(alpha: 0.45),
-                ),
-              ),
-              if (!node.isMaxed && unlocked)
-                Text(
-                  '${node.nextCost}',
-                  style: TextStyle(
-                    fontFamily: 'serif',
-                    fontSize: 10,
-                    color: _maroonGlow.withValues(alpha: 0.75),
-                  ),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -613,6 +638,7 @@ class _UpgradeButtonState extends State<_UpgradeButton>
 
   Future<void> _handleTap() async {
     if (!widget.enabled) return;
+    AudioManager.instance.playTap();
     await _controller.forward(from: 0);
     if (!mounted) return;
     widget.onTap();

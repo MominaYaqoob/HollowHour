@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
+import 'audio/audio_manager.dart';
 import 'prefs/app_flags.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
+import 'state/economy_state.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  await AudioManager.instance.init();
   runApp(const HollowHourApp());
 }
 
@@ -16,23 +20,26 @@ class HollowHourApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Hollow Hour',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0A0A0A),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8B1A1A),
+    return ChangeNotifierProvider(
+      create: (_) => EconomyState(),
+      child: MaterialApp(
+        title: 'Hollow Hour',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
           brightness: Brightness.dark,
+          scaffoldBackgroundColor: const Color(0xFF0A0A0A),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF8B1A1A),
+            brightness: Brightness.dark,
+          ),
         ),
+        home: const _RootGate(),
       ),
-      home: const _RootGate(),
     );
   }
 }
 
-/// Loads onboarding flag, then shows Onboarding or Splash.
+/// Loads economy + onboarding flag, then shows Onboarding or Splash.
 class _RootGate extends StatefulWidget {
   const _RootGate();
 
@@ -41,23 +48,32 @@ class _RootGate extends StatefulWidget {
 }
 
 class _RootGateState extends State<_RootGate> {
-  late final Future<bool> _hasSeenOnboarding;
+  Future<bool>? _bootstrap;
 
   @override
-  void initState() {
-    super.initState();
-    _hasSeenOnboarding = AppFlags.hasSeenOnboarding();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bootstrap ??= _load();
+  }
+
+  Future<bool> _load() async {
+    await context.read<EconomyState>().loadFromDisk();
+    return AppFlags.hasSeenOnboarding();
   }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<bool>(
-      future: _hasSeenOnboarding,
+      future: _bootstrap,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Scaffold(
             backgroundColor: Color(0xFF0A0A0A),
-            body: SizedBox.expand(),
+            body: Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF8B1A1A),
+              ),
+            ),
           );
         }
         final seen = snapshot.data ?? false;
