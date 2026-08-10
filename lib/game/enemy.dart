@@ -64,13 +64,22 @@ class EnemyBehavior {
       }
       e.moving = true;
       e.facingLeft = toPlayer.dx < 0;
-      e.walkAnimTime += dt;
+      final before = e.position;
       final next = e.position + toPlayer / dist * e.speed * dt;
       e.position = GameState.resolveObstacleCollision(
         next,
         e.radius,
         state.obstacles,
       );
+      // Visual-only: walk fps scales with how far they actually moved.
+      final moved = (e.position - before).distance;
+      if (moved < 0.1) {
+        e.moving = false;
+      } else {
+        const baseSpeed = 58.0;
+        final speedScale = (moved / dt / baseSpeed).clamp(0.35, 2.0);
+        e.walkAnimTime += dt * speedScale;
+      }
     }
   }
 }

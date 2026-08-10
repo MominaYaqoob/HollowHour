@@ -31,8 +31,10 @@ class PlayerController {
     final dt = delta.inMicroseconds / 1e6;
     if (dt <= 0) return;
 
+    // Idle immediately when stick released — no skate/hold on last walk frame.
     if (!state.isRunning || stick == Offset.zero) {
       state.playerMoving = false;
+      state.walkAnimTime = 0;
       return;
     }
 
@@ -40,12 +42,12 @@ class PlayerController {
     if (size.isEmpty) return;
 
     state.playerMoving = true;
-    state.walkAnimTime += dt;
     if (!state.aimFacingActive) {
       state.facingAngle = math.atan2(stick.dy, stick.dx);
     }
 
     const playerRadius = 14.0;
+    final before = state.playerPosition;
     final next = state.playerPosition + stick * state.moveSpeed * dt;
     final resolved = GameState.resolveObstacleCollision(
       next,
@@ -56,6 +58,20 @@ class PlayerController {
       resolved.dx.clamp(playerRadius, size.width - playerRadius),
       resolved.dy.clamp(playerRadius, size.height - playerRadius),
     );
+
+    // Advance walk cycle from actual displacement so frames match speed;
+    // stuck against a wall → idle feet (no treadmill skate).
+    final moved = (state.playerPosition - before).distance;
+    if (moved < 0.15) {
+      state.playerMoving = false;
+      state.walkAnimTime = 0;
+      return;
+    }
+    // ~8fps at base 175 speed / full stick; scales with effective speed.
+    const baseSpeed = 175.0;
+    final speedScale =
+        (moved / dt / baseSpeed).clamp(0.35, 1.75);
+    state.walkAnimTime += dt * speedScale;
   }
 
   /// Visual knuckle offset inside the joystick (pixels).

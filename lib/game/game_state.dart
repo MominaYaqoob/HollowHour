@@ -115,15 +115,15 @@ class GameState extends ChangeNotifier {
     obstacles.clear();
     final rng = math.Random();
     final count = 4 + rng.nextInt(3); // 4–6
+    // Prefer muted/dead/autumn props; bright greens still get paint-time mute.
     final catalog = <({String asset, double radius, double drawW, double drawH})>[
-      (asset: 'assets/game/environment/tree_01.png', radius: 18, drawW: 56, drawH: 84),
       (asset: 'assets/game/environment/tree_dead.png', radius: 20, drawW: 72, drawH: 58),
+      (asset: 'assets/game/environment/tree_01.png', radius: 18, drawW: 52, drawH: 78),
       (asset: 'assets/game/environment/rock_01.png', radius: 16, drawW: 48, drawH: 48),
       (asset: 'assets/game/environment/rock_02.png', radius: 16, drawW: 48, drawH: 48),
-      (asset: 'assets/game/environment/bush_green.png', radius: 15, drawW: 52, drawH: 52),
       (asset: 'assets/game/environment/bush_dead.png', radius: 15, drawW: 52, drawH: 52),
       (asset: 'assets/game/environment/bush_autumn.png', radius: 15, drawW: 52, drawH: 52),
-      (asset: 'assets/game/environment/bush_lime.png', radius: 15, drawW: 52, drawH: 52),
+      (asset: 'assets/game/environment/bush_green.png', radius: 15, drawW: 48, drawH: 48),
     ];
 
     final center = Offset(size.width / 2, size.height / 2);

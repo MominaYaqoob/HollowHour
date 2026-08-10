@@ -874,8 +874,24 @@ class _ArenaPainter extends CustomPainter {
   final double aimRangeAlpha;
   final double aimRangeRadius;
 
-  static const double _playerDrawSize = 40;
+  static const double _playerDrawSize = 36;
   static const Color _maroonGlow = Color(0xFFC41E1E);
+
+  /// Pull saturated greens toward muted grey-fog (env props).
+  static const ColorFilter _envMuteFilter = ColorFilter.matrix(<double>[
+    0.28, 0.42, 0.18, 0, -12,
+    0.26, 0.40, 0.18, 0, -10,
+    0.24, 0.34, 0.26, 0, -6,
+    0, 0, 0, 1, 0,
+  ]);
+
+  /// Soften enemy pack saturation toward pastel fog tone.
+  static const ColorFilter _enemyMuteFilter = ColorFilter.matrix(<double>[
+    0.55, 0.30, 0.15, 0, -6,
+    0.25, 0.50, 0.15, 0, -4,
+    0.20, 0.25, 0.45, 0, 2,
+    0, 0, 0, 1, 0,
+  ]);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -928,6 +944,12 @@ class _ArenaPainter extends CustomPainter {
       );
     }
 
+    // Ground markers first, then sprites (enemies + player).
+    for (final e in state.enemies) {
+      _paintGroundMarker(canvas, e.position, e.radius * 1.7);
+    }
+    _paintGroundMarker(canvas, state.playerPosition, 16);
+
     // Enemies — sprite sheets (fallback to colored circles).
     for (final e in state.enemies) {
       _paintEnemy(canvas, e);
@@ -955,6 +977,26 @@ class _ArenaPainter extends CustomPainter {
     _paintPlayer(canvas);
   }
 
+  /// Soft oval shadow under feet — cosmetic only (no hitbox change).
+  void _paintGroundMarker(Canvas canvas, Offset position, double width) {
+    final oval = Rect.fromCenter(
+      center: Offset(position.dx, position.dy + 6),
+      width: width,
+      height: width * 0.38,
+    );
+    canvas.drawOval(
+      oval,
+      Paint()..color = Colors.black.withValues(alpha: 0.38),
+    );
+    canvas.drawOval(
+      oval.inflate(1.2),
+      Paint()
+        ..color = const Color(0xFF2A1818).withValues(alpha: 0.22)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
+  }
+
   void _paintAimRange(Canvas canvas) {
     if (aimRangeAlpha <= 0.01) return;
     final opacity = (0.18 * aimRangeAlpha).clamp(0.0, 0.2);
@@ -970,6 +1012,8 @@ class _ArenaPainter extends CustomPainter {
   }
 
   void _paintObstacles(Canvas canvas) {
+    // Grade trees/bushes/rocks into the arena's muted fog palette.
+    canvas.saveLayer(null, Paint()..colorFilter = _envMuteFilter);
     final paint = Paint()..filterQuality = FilterQuality.none;
     for (final o in state.obstacles) {
       final img = envSprites?[o.assetPath];
@@ -993,6 +1037,7 @@ class _ArenaPainter extends CustomPainter {
         paint,
       );
     }
+    canvas.restore();
   }
 
   void _paintEnemy(Canvas canvas, EnemyEntity e) {
@@ -1015,20 +1060,21 @@ class _ArenaPainter extends CustomPainter {
     final frameIndex =
         e.moving ? (e.walkAnimTime * 8).floor() % frameCount : 0;
 
-    final drawSize = e.radius * 2.6;
+    final drawSize = e.radius * 2.35;
     final src = Rect.fromLTWH(
       (frameIndex * frameW).toDouble(),
       0,
       frameW.toDouble(),
       frameH.toDouble(),
     );
+    // Anchor sprite slightly above the ground marker (feet at entity pos).
     final dst = Rect.fromCenter(
-      center: Offset.zero,
+      center: const Offset(0, -2),
       width: drawSize,
       height: drawSize * (frameH / frameW),
     );
 
-    canvas.save();
+    canvas.saveLayer(null, Paint()..colorFilter = _enemyMuteFilter);
     canvas.translate(e.position.dx, e.position.dy);
     if (e.facingLeft) {
       canvas.scale(-1, 1);
@@ -1079,6 +1125,7 @@ class _ArenaPainter extends CustomPainter {
     final frameW = frameH <= 0 ? sheet.width : frameH;
     final frameCount =
         frameW <= 0 ? 1 : math.max(1, sheet.width ~/ frameW);
+    // Idle = frame 0; walk cycle driven by displacement-scaled walkAnimTime.
     final frameIndex = state.playerMoving
         ? (state.walkAnimTime * 8).floor() % frameCount
         : 0;
@@ -1090,7 +1137,7 @@ class _ArenaPainter extends CustomPainter {
       frameH.toDouble(),
     );
     final dst = Rect.fromCenter(
-      center: Offset.zero,
+      center: const Offset(0, -3),
       width: _playerDrawSize,
       height: _playerDrawSize * (frameH / frameW),
     );

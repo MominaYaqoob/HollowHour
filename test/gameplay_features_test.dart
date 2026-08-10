@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hollow_hour/game/aim_fire_controller.dart';
 import 'package:hollow_hour/game/game_state.dart';
 import 'package:hollow_hour/game/magnet_spawner.dart';
+import 'package:hollow_hour/game/player_controller.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -82,5 +83,21 @@ void main() {
     expect(state.magnetActive, isTrue);
     expect(state.magnetTimeLeft, inInclusiveRange(8, 10));
     expect(state.lastPickupLabel, 'MAGNET');
+  });
+
+  test('walk anim advances while moving and resets to idle on stick release', () {
+    final state = GameState()..setWorldSize(const Size(400, 700));
+    // Clear obstacles so movement isn't blocked.
+    state.obstacles.clear();
+    final player = PlayerController(state);
+    player.setStickFromLocalDelta(const Offset(40, 0), 59);
+    player.update(const Duration(milliseconds: 50));
+    expect(state.playerMoving, isTrue);
+    expect(state.walkAnimTime, greaterThan(0));
+
+    player.clearStick();
+    player.update(const Duration(milliseconds: 16));
+    expect(state.playerMoving, isFalse);
+    expect(state.walkAnimTime, 0);
   });
 }

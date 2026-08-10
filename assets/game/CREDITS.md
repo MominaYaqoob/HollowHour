@@ -70,6 +70,10 @@ into the folders below.
 
 ---
 
+## Style note (20 Minutes Till Dawn tone)
+
+Anokolisa Pixel Crawler **kept** — small chibi proportions and muted player Body_A already match the reference tone. Enemy/environment sheets are grade-muted at paint time (desaturation matrices in `_ArenaPainter`) rather than replaced with a new itch pack.
+
 ## Gaps
 
 | Requested | Status |
