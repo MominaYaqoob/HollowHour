@@ -9,11 +9,16 @@ import 'package:hollow_hour/game/player_controller.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('obstacles spawn 4–6 on first world size', () {
+  test('obstacles spawn on expanded world from view size', () {
     final state = GameState();
-    state.setWorldSize(const Size(400, 700));
-    expect(state.obstacles.length, inInclusiveRange(4, 6));
-    expect(state.playerPosition, const Offset(200, 350));
+    state.setViewSize(const Size(400, 700));
+    expect(state.viewSize, const Size(400, 700));
+    expect(state.worldSize.width, closeTo(400 * GameState.worldScale, 0.1));
+    expect(state.obstacles.length, inInclusiveRange(8, 12));
+    expect(
+      state.playerPosition,
+      Offset(state.worldSize.width / 2, state.worldSize.height / 2),
+    );
   });
 
   test('obstacle collision pushes point outside radius', () {
@@ -56,7 +61,7 @@ void main() {
   });
 
   test('aim range indicator fades toward active while aiming', () {
-    final state = GameState()..setWorldSize(const Size(300, 300));
+    final state = GameState()..setViewSize(const Size(300, 300));
     final aim = AimFireController(state);
     expect(aim.rangeIndicatorAlpha, 0);
 
@@ -77,7 +82,7 @@ void main() {
   });
 
   test('magnet activate sets timed magnetActive flag', () {
-    final state = GameState()..setWorldSize(const Size(400, 700));
+    final state = GameState()..setViewSize(const Size(400, 700));
     final magnet = MagnetSpawner(state);
     magnet.activateFromPickup();
     expect(state.magnetActive, isTrue);
@@ -86,7 +91,7 @@ void main() {
   });
 
   test('walk anim advances while moving and resets to idle on stick release', () {
-    final state = GameState()..setWorldSize(const Size(400, 700));
+    final state = GameState()..setViewSize(const Size(400, 700));
     // Clear obstacles so movement isn't blocked.
     state.obstacles.clear();
     final player = PlayerController(state);

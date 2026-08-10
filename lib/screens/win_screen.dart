@@ -1,21 +1,27 @@
 import 'package:flutter/material.dart';
 
+import '../state/economy_state.dart';
 import '../theme/field_backdrop.dart';
+import 'gameplay_hud_screen.dart';
 import 'pre_game_setup_screen.dart';
 
-/// Victory / results screen — mirrors GameOver timing with a warmer dawn mood.
+/// Victory / results screen — shown after clearing a campaign stage.
 class WinScreen extends StatefulWidget {
   const WinScreen({
     super.key,
     this.enemiesDefeated = 47,
     this.timeSurvived = '20:00',
     this.embersEarned = 320,
-    this.headline = 'Dawn Breaks',
+    this.levelReached = 1,
+    this.headline = 'Level Cleared',
   });
 
   final int enemiesDefeated;
   final String timeSurvived;
   final int embersEarned;
+
+  /// Stage that was just cleared (1–30).
+  final int levelReached;
   final String headline;
 
   @override
@@ -101,11 +107,32 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  void _playAgain() {
+  int get _cleared =>
+      widget.levelReached.clamp(1, EconomyState.maxCharacterLevel);
+
+  int get _nextLevel =>
+      (_cleared + 1).clamp(1, EconomyState.maxCharacterLevel);
+
+  bool get _hasNext => _cleared < EconomyState.maxCharacterLevel;
+
+  void _retryLevel() {
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const PreGameSetupScreen(),
+            PreGameSetupScreen(stageLevel: _cleared),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
+  }
+
+  void _nextLevelGo() {
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            GameplayHudScreen(stageLevel: _nextLevel),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -225,14 +252,23 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
                         timeSurvived: widget.timeSurvived,
                         timeProgress: t,
                         embersEarned: (widget.embersEarned * t).round(),
+                        levelReached: widget.levelReached,
                       );
                     },
                   ),
                   const Spacer(flex: 3),
+                  if (_hasNext) ...[
+                    _GlowButton(
+                      label: 'Next Level ($_nextLevel)',
+                      primary: true,
+                      onTap: _nextLevelGo,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   _GlowButton(
-                    label: 'Play Again',
-                    primary: true,
-                    onTap: _playAgain,
+                    label: _hasNext ? 'Replay Level $_cleared' : 'Play Again',
+                    primary: !_hasNext,
+                    onTap: _retryLevel,
                   ),
                   const SizedBox(height: 12),
                   _GlowButton(
@@ -256,12 +292,14 @@ class _StatsPanel extends StatelessWidget {
     required this.timeSurvived,
     required this.timeProgress,
     required this.embersEarned,
+    required this.levelReached,
   });
 
   final int enemiesDefeated;
   final String timeSurvived;
   final double timeProgress;
   final int embersEarned;
+  final int levelReached;
 
   static const Color _dawn = Color(0xFFD4A24C);
 
@@ -282,6 +320,11 @@ class _StatsPanel extends StatelessWidget {
           _StatRow(
             label: 'Time Survived',
             value: _revealTime(timeSurvived, timeProgress),
+          ),
+          const _StatDivider(),
+          _StatRow(
+            label: 'Level Cleared',
+            value: '$levelReached/${EconomyState.maxCharacterLevel}',
           ),
           const _StatDivider(),
           _StatRow(

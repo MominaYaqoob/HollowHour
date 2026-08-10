@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../audio/audio_manager.dart';
+import '../game/game_mode.dart';
 import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
 import 'gameplay_hud_screen.dart';
 
-enum GameMode { standard, quick, endless }
+export '../game/game_mode.dart'
+    show GameMode, stageDurationForLevel, stageDepthForLevel, stageDurationLabel;
 
 class _WeaponOption {
   const _WeaponOption({
@@ -30,9 +32,15 @@ class _CharacterLoadout {
   final String portraitAsset;
 }
 
-/// Pre-game setup — character preview, weapon, mode, and Hollow Depth.
+/// Pre-game setup — character preview, weapon, and selected stage level.
 class PreGameSetupScreen extends StatefulWidget {
-  const PreGameSetupScreen({super.key});
+  const PreGameSetupScreen({
+    super.key,
+    this.stageLevel = 1,
+  });
+
+  /// Campaign stage to play (1–30). Duration + difficulty derived from this.
+  final int stageLevel;
 
   @override
   State<PreGameSetupScreen> createState() => _PreGameSetupScreenState();
@@ -99,8 +107,7 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
   late final Animation<double> _fogDrift;
   late final Animation<double> _fogOpacity;
 
-  GameMode _mode = GameMode.standard;
-  double _hollowDepth = 5;
+  int get _stageLevel => widget.stageLevel.clamp(1, 30);
 
   @override
   void initState() {
@@ -223,73 +230,53 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
                     ),
                   ),
                   const SizedBox(height: 28),
-                  _SectionLabel('Game Mode'),
+                  _SectionLabel('Stage'),
                   const SizedBox(height: 12),
-                  _ModeSegmentedControl(
-                    value: _mode,
-                    onChanged: (mode) => setState(() => _mode = mode),
-                  ),
-                  const SizedBox(height: 28),
-                  Row(
-                    children: [
-                      const Expanded(child: _SectionLabel('Hollow Depth')),
-                      Text(
-                        '${_hollowDepth.round()}',
-                        style: TextStyle(
-                          fontFamily: 'serif',
-                          fontSize: 18,
-                          letterSpacing: 1,
-                          color: _maroonGlow.withValues(alpha: 0.95),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.08),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Level $_stageLevel',
+                          style: TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 16,
+                            letterSpacing: 1.2,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: _maroon,
-                      inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
-                      thumbColor: _maroonGlow,
-                      overlayColor: _maroonGlow.withValues(alpha: 0.2),
-                      trackHeight: 4,
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 8,
-                      ),
-                      valueIndicatorColor: _maroon,
-                      valueIndicatorTextStyle: const TextStyle(
-                        fontFamily: 'serif',
-                        fontSize: 12,
-                      ),
-                    ),
-                    child: Slider(
-                      value: _hollowDepth,
-                      min: 1,
-                      max: 15,
-                      divisions: 14,
-                      label: '${_hollowDepth.round()}',
-                      onChanged: (value) {
-                        setState(() => _hollowDepth = value);
-                      },
-                    ),
-                  ),
-                  Text(
-                    'Difficulty',
-                    style: TextStyle(
-                      fontFamily: 'serif',
-                      fontSize: 11,
-                      letterSpacing: 1,
-                      color: Colors.white.withValues(alpha: 0.3),
+                        const Spacer(),
+                        Text(
+                          'Survive ${stageDurationLabel(_stageLevel)}',
+                          style: TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 13,
+                            letterSpacing: 1,
+                            color: _maroonGlow.withValues(alpha: 0.95),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const Spacer(),
                   _BeginButton(
                     onPressed: () {
-                      final depth = _hollowDepth.round();
+                      final level = _stageLevel;
                       Navigator.of(context).pushReplacement(
                         PageRouteBuilder(
                           pageBuilder:
                               (context, animation, secondaryAnimation) =>
-                                  GameplayHudScreen(hollowDepth: depth),
+                                  GameplayHudScreen(stageLevel: level),
                           transitionsBuilder: (
                             context,
                             animation,
@@ -500,97 +487,6 @@ class _WeaponChip extends StatelessWidget {
                   ),
                 ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ModeSegmentedControl extends StatelessWidget {
-  const _ModeSegmentedControl({
-    required this.value,
-    required this.onChanged,
-  });
-
-  final GameMode value;
-  final ValueChanged<GameMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Row(
-        children: [
-          for (final mode in GameMode.values)
-            Expanded(
-              child: _ModeSegment(
-                label: switch (mode) {
-                  GameMode.standard => 'Standard',
-                  GameMode.quick => 'Quick',
-                  GameMode.endless => 'Endless',
-                },
-                selected: value == mode,
-                onTap: () => onChanged(mode),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ModeSegment extends StatelessWidget {
-  const _ModeSegment({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  static const Color _maroon = Color(0xFF8B1A1A);
-  static const Color _maroonGlow = Color(0xFFC41E1E);
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: selected
-              ? _maroon.withValues(alpha: 0.35)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: _maroonGlow.withValues(alpha: 0.25),
-                    blurRadius: 10,
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: 'serif',
-            fontSize: 13,
-            letterSpacing: 1,
-            color: selected
-                ? Colors.white.withValues(alpha: 0.95)
-                : Colors.white.withValues(alpha: 0.45),
           ),
         ),
       ),

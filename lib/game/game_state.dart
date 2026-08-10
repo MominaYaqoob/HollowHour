@@ -2,32 +2,48 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'game_mode.dart';
+
 /// Runtime match state — HP, XP, timer, entities, and combat stats.
 class GameState extends ChangeNotifier {
   GameState({
     this.hollowDepth = 5,
     this.playerCharacterId = 'wanderer',
-    Duration matchDuration = const Duration(minutes: 20),
+    this.gameMode = GameMode.standard,
+    Duration? matchDuration,
     double startingMaxHp = 100,
     double startingMoveSpeed = 175,
     double startingDamage = 12,
     double startingFireCooldown = 0.38,
-  })  : maxHp = startingMaxHp,
+  })  : matchDuration =
+            matchDuration ?? gameMode.matchDuration,
+        maxHp = startingMaxHp,
         playerHp = startingMaxHp,
         moveSpeed = startingMoveSpeed,
         projectileDamage = startingDamage,
         fireCooldownSeconds = startingFireCooldown,
-        timeRemaining = matchDuration,
-        matchDuration = matchDuration;
+        timeRemaining = matchDuration ?? gameMode.matchDuration;
 
   final int hollowDepth;
+  final GameMode gameMode;
   final Duration matchDuration;
+
+  /// Endless count-up clock (timed modes use [matchDuration] − [timeRemaining]).
+  Duration _elapsedSurvival = Duration.zero;
 
   /// Equipped character id (wanderer/huntress/scholar/brute/ghost).
   String playerCharacterId;
 
   Offset playerPosition = Offset.zero;
+
+  /// Visible viewport (screen playfield).
+  Size viewSize = Size.zero;
+
+  /// Full walkable arena — larger than [viewSize]; camera follows the player.
   Size worldSize = Size.zero;
+
+  /// World is this many times the viewport on each axis.
+  static const double worldScale = 2.4;
 
   /// Aim/move facing in radians (0 = right, π/2 = down). Visual only.
   double facingAngle = math.pi / 2;
@@ -80,57 +96,106 @@ class GameState extends ChangeNotifier {
   bool get isRunning =>
       !isPaused && !isGameOver && !isWin && !awaitingLevelUp;
 
-  Duration get elapsed =>
-      matchDuration - timeRemaining < Duration.zero
-          ? Duration.zero
-          : matchDuration - timeRemaining;
+  Duration get elapsed {
+    if (gameMode.isEndless) return _elapsedSurvival;
+    final e = matchDuration - timeRemaining;
+    return e < Duration.zero ? Duration.zero : e;
+  }
+
+  /// Survival progress level for this run (1–30), from match elapsed time.
+  /// Standard/Quick: proportional to active [matchDuration].
+  /// Endless: ~40s per level (Standard scale), capped at 30 for unlocks.
+  int get survivalLevelReached {
+    const maxLevels = 30;
+    final elapsedMs = elapsed.inMilliseconds;
+    if (elapsedMs <= 0) return 1;
+
+    if (gameMode.isEndless) {
+      final segmentMs =
+          GameModeDuration.standardLevelInterval.inMilliseconds;
+      final level = (elapsedMs / segmentMs).ceil();
+      return level.clamp(1, maxLevels);
+    }
+
+    final totalMs = matchDuration.inMilliseconds;
+    if (totalMs <= 0) return 1;
+    final clamped = elapsedMs.clamp(0, totalMs);
+    if (isWin || clamped >= totalMs) return maxLevels;
+    final level = (clamped / totalMs * maxLevels).ceil();
+    return level.clamp(1, maxLevels);
+  }
 
   String get timerLabel {
-    final t = timeRemaining.isNegative ? Duration.zero : timeRemaining;
-    final m = t.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = t.inSeconds.remainder(60).toString().padLeft(2, '0');
+    // Endless: count-up stopwatch. Timed modes: count-down.
+    final t = gameMode.isEndless
+        ? elapsed
+        : (timeRemaining.isNegative ? Duration.zero : timeRemaining);
+    final totalSec = t.inSeconds;
+    final m = (totalSec ~/ 60).toString().padLeft(2, '0');
+    final s = (totalSec % 60).toString().padLeft(2, '0');
     return '$m:$s';
   }
 
   String get elapsedLabel {
     final t = elapsed;
-    final m = t.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = t.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final totalSec = t.inSeconds;
+    final m = (totalSec ~/ 60).toString().padLeft(2, '0');
+    final s = (totalSec % 60).toString().padLeft(2, '0');
     return '$m:$s';
   }
 
-  void setWorldSize(Size size) {
-    if (size == worldSize || size.isEmpty) return;
-    final first = worldSize.isEmpty;
-    worldSize = size;
+  /// Call with the on-screen playfield size; expands [worldSize] for camera play.
+  void setViewSize(Size view) {
+    if (view.isEmpty || view == viewSize) return;
+    final first = viewSize.isEmpty;
+    viewSize = view;
+    worldSize = Size(view.width * worldScale, view.height * worldScale);
     if (first) {
-      playerPosition = Offset(size.width / 2, size.height / 2);
-      _spawnObstacles(size);
+      playerPosition = Offset(worldSize.width / 2, worldSize.height / 2);
+      _spawnObstacles(worldSize);
     }
     notifyListeners();
   }
 
-  /// Places 4–6 static environment props with circular base collision.
+  /// Top-left of the camera window in world space (player-centered, clamped).
+  Offset get cameraTopLeft {
+    if (viewSize.isEmpty || worldSize.isEmpty) return Offset.zero;
+    final maxX = math.max(0.0, worldSize.width - viewSize.width);
+    final maxY = math.max(0.0, worldSize.height - viewSize.height);
+    return Offset(
+      (playerPosition.dx - viewSize.width / 2).clamp(0.0, maxX),
+      (playerPosition.dy - viewSize.height / 2).clamp(0.0, maxY),
+    );
+  }
+
+  /// Places static environment props across the full world.
   void _spawnObstacles(Size size) {
     obstacles.clear();
     final rng = math.Random();
-    final count = 4 + rng.nextInt(3); // 4–6
-    // Prefer muted/dead/autumn props; bright greens still get paint-time mute.
+    final count = 8 + rng.nextInt(5); // 8–12 on the expanded map
+    // Prefer tall gothic trees (~2.5–3× player). Rocks/bushes for variety.
     final catalog = <({String asset, double radius, double drawW, double drawH})>[
-      (asset: 'assets/game/environment/tree_dead.png', radius: 20, drawW: 72, drawH: 58),
-      (asset: 'assets/game/environment/tree_01.png', radius: 18, drawW: 52, drawH: 78),
-      (asset: 'assets/game/environment/rock_01.png', radius: 16, drawW: 48, drawH: 48),
-      (asset: 'assets/game/environment/rock_02.png', radius: 16, drawW: 48, drawH: 48),
-      (asset: 'assets/game/environment/bush_dead.png', radius: 15, drawW: 52, drawH: 52),
-      (asset: 'assets/game/environment/bush_autumn.png', radius: 15, drawW: 52, drawH: 52),
-      (asset: 'assets/game/environment/bush_green.png', radius: 15, drawW: 48, drawH: 48),
+      (asset: 'assets/game/environment/tree_gothic_a.png', radius: 20, drawW: 96, drawH: 144),
+      (asset: 'assets/game/environment/tree_gothic_b.png', radius: 22, drawW: 104, drawH: 152),
+      (asset: 'assets/game/environment/tree_dead.png', radius: 18, drawW: 88, drawH: 132),
+      (asset: 'assets/game/environment/tree_01.png', radius: 18, drawW: 88, drawH: 132),
+      (asset: 'assets/game/environment/rock_01.png', radius: 16, drawW: 44, drawH: 44),
+      (asset: 'assets/game/environment/rock_02.png', radius: 16, drawW: 44, drawH: 44),
+      (asset: 'assets/game/environment/bush_dead.png', radius: 14, drawW: 48, drawH: 48),
+      (asset: 'assets/game/environment/bush_autumn.png', radius: 14, drawW: 48, drawH: 48),
+    ];
+    // Bias spawn rolls toward gothic trees.
+    final weighted = <({String asset, double radius, double drawW, double drawH})>[
+      ...List.filled(3, catalog[0]),
+      ...List.filled(3, catalog[1]),
+      ...catalog.skip(2),
     ];
 
     final center = Offset(size.width / 2, size.height / 2);
     var attempts = 0;
     while (obstacles.length < count && attempts < 80) {
       attempts++;
-      final entry = catalog[rng.nextInt(catalog.length)];
+      final entry = weighted[rng.nextInt(weighted.length)];
       final pos = Offset(
         40 + rng.nextDouble() * (size.width - 80),
         40 + rng.nextDouble() * (size.height - 80),
@@ -211,6 +276,12 @@ class GameState extends ChangeNotifier {
 
   void tick(Duration delta) {
     if (!isRunning) return;
+    if (gameMode.isEndless) {
+      // Count up forever — death is the only end condition.
+      _elapsedSurvival += delta;
+      notifyListeners();
+      return;
+    }
     timeRemaining -= delta;
     if (timeRemaining <= Duration.zero) {
       timeRemaining = Duration.zero;

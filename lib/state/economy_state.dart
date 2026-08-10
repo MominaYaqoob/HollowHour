@@ -22,9 +22,23 @@ class EconomyState extends ChangeNotifier {
       'warding': 0,
       'emberheart': 0,
     };
+    characterBestLevel = {
+      for (final id in characterProgressionOrder) id: 0,
+    };
   }
 
   static const _prefsKey = 'economy_state';
+
+  /// Wanderer → Huntress → Scholar → Brute → Ghost.
+  static const characterProgressionOrder = [
+    'wanderer',
+    'huntress',
+    'scholar',
+    'brute',
+    'ghost',
+  ];
+
+  static const maxCharacterLevel = 30;
 
   late int embers;
   late Set<String> ownedCharacterIds;
@@ -34,6 +48,7 @@ class EconomyState extends ChangeNotifier {
   String? equippedWeaponId;
   late Set<String> equippedRuneIds;
   late Map<String, int> talentLevels;
+  late Map<String, int> characterBestLevel;
 
   Future<void> loadFromDisk() async {
     final prefs = await SharedPreferences.getInstance();
@@ -56,6 +71,14 @@ class EconomyState extends ChangeNotifier {
             e.key.toString(): (e.value as num).toInt(),
         };
       }
+      final best = map['characterBestLevel'];
+      if (best is Map) {
+        characterBestLevel = {
+          for (final id in characterProgressionOrder)
+            id: (best[id] as num?)?.toInt() ?? 0,
+        };
+      }
+      _grantProgressionUnlocks();
       notifyListeners();
     } catch (_) {
       // Keep seeded defaults if saved data is corrupt.
@@ -75,6 +98,7 @@ class EconomyState extends ChangeNotifier {
         'equippedWeaponId': equippedWeaponId,
         'equippedRuneIds': equippedRuneIds.toList(),
         'talentLevels': talentLevels,
+        'characterBestLevel': characterBestLevel,
       }),
     );
   }
@@ -167,6 +191,71 @@ class EconomyState extends ChangeNotifier {
   bool ownsCharacter(String id) => ownedCharacterIds.contains(id);
   bool ownsWeapon(String id) => ownedWeaponIds.contains(id);
   bool ownsRune(String id) => ownedRuneIds.contains(id);
+
+  /// Highest stage level cleared for this character (0 = none yet).
+  int bestLevelFor(String characterId) =>
+      characterBestLevel[characterId] ?? 0;
+
+  /// Next stage to play (1–30). Level 1 is always available when owned.
+  int nextPlayableLevel(String characterId) {
+    final next = bestLevelFor(characterId) + 1;
+    return next.clamp(1, maxCharacterLevel);
+  }
+
+  /// Cleared levels + the immediate next stage are unlocked.
+  bool isStageUnlocked(String characterId, int level) {
+    if (level < 1 || level > maxCharacterLevel) return false;
+    return level <= bestLevelFor(characterId) + 1;
+  }
+
+  /// Previous character in the progression sequence, or null for Wanderer.
+  String? previousCharacterId(String characterId) {
+    final i = characterProgressionOrder.indexOf(characterId);
+    if (i <= 0) return null;
+    return characterProgressionOrder[i - 1];
+  }
+
+  /// True when the prior roster character has cleared Lv 30 (free unlock path).
+  bool canUnlockViaProgression(String characterId) {
+    if (ownsCharacter(characterId)) return false;
+    final prev = previousCharacterId(characterId);
+    if (prev == null) return false;
+    return bestLevelFor(prev) >= maxCharacterLevel;
+  }
+
+  /// Records a cleared stage if it beats the stored best, then saves.
+  /// Call only on stage win with that stage's level number.
+  void updateCharacterLevel(String characterId, int clearedLevel) {
+    final clamped = clearedLevel.clamp(0, maxCharacterLevel);
+    final current = bestLevelFor(characterId);
+    if (clamped <= current) {
+      if (_grantProgressionUnlocks()) {
+        notifyListeners();
+        _persist();
+      }
+      return;
+    }
+    characterBestLevel[characterId] = clamped;
+    _grantProgressionUnlocks();
+    notifyListeners();
+    _persist();
+  }
+
+  /// Owns the next character for free when the previous hits Lv 30.
+  /// Returns true if ownership changed.
+  bool _grantProgressionUnlocks() {
+    var changed = false;
+    for (var i = 1; i < characterProgressionOrder.length; i++) {
+      final prev = characterProgressionOrder[i - 1];
+      final next = characterProgressionOrder[i];
+      if (bestLevelFor(prev) >= maxCharacterLevel &&
+          !ownedCharacterIds.contains(next)) {
+        ownedCharacterIds.add(next);
+        changed = true;
+      }
+    }
+    return changed;
+  }
 
   static Set<String>? _stringSet(dynamic value) {
     if (value is! List) return null;

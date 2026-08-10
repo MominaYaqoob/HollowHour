@@ -13,6 +13,7 @@ typedef GameEndCallback = void Function({
   required int killCount,
   required String timeLabel,
   required int embersEarned,
+  required int levelReached,
 });
 
 /// Ticker-driven ~60fps match loop.
@@ -105,6 +106,7 @@ class GameLoop {
         killCount: state.killCount,
         timeLabel: state.elapsedLabel,
         embersEarned: embers,
+        levelReached: state.survivalLevelReached,
       );
     }
   }

@@ -10,12 +10,16 @@ class GameOverScreen extends StatefulWidget {
     this.enemiesDefeated = 23,
     this.timeSurvived = '04:12',
     this.embersEarned = 185,
+    this.levelReached = 1,
+    this.stageLevel = 1,
     this.headline = 'The Hollow Claims You',
   });
 
   final int enemiesDefeated;
   final String timeSurvived;
   final int embersEarned;
+  final int levelReached;
+  final int stageLevel;
   final String headline;
 
   @override
@@ -106,7 +110,7 @@ class _GameOverScreenState extends State<GameOverScreen>
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const GameplayHudScreen(),
+            GameplayHudScreen(stageLevel: widget.stageLevel),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -225,6 +229,7 @@ class _GameOverScreenState extends State<GameOverScreen>
                         timeSurvived: widget.timeSurvived,
                         timeProgress: t,
                         embersEarned: (widget.embersEarned * t).round(),
+                        levelReached: widget.levelReached,
                       );
                     },
                   ),
@@ -256,12 +261,14 @@ class _StatsPanel extends StatelessWidget {
     required this.timeSurvived,
     required this.timeProgress,
     required this.embersEarned,
+    required this.levelReached,
   });
 
   final int enemiesDefeated;
   final String timeSurvived;
   final double timeProgress;
   final int embersEarned;
+  final int levelReached;
 
   @override
   Widget build(BuildContext context) {
@@ -283,6 +290,11 @@ class _StatsPanel extends StatelessWidget {
           _StatRow(
             label: 'Time Survived',
             value: _revealTime(timeSurvived, timeProgress),
+          ),
+          const _StatDivider(),
+          _StatRow(
+            label: 'Level Reached',
+            value: '$levelReached/30',
           ),
           const _StatDivider(),
           _StatRow(

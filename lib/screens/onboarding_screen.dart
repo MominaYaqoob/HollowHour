@@ -353,8 +353,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                   child: Column(
                                     children: [
                                       Text(
-                                        'The hour is thin tonight. Fog claims the living, '
-                                        'and only embers keep the dark at bay.',
+                                        'Pick a character, choose a level, and survive '
+                                        'the timer. Clear stages to unlock the next — '
+                                        'finish Level 30 to free the next soul.',
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           fontFamily: 'serif',
@@ -367,7 +368,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                       ),
                                       const SizedBox(height: 14),
                                       Text(
-                                        'A work of fiction — the Hollow always waits.',
+                                        'Drag to move. Aim on the right. Embers buy power.',
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           fontFamily: 'serif',

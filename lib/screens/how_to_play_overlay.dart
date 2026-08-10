@@ -148,13 +148,26 @@ class _HowToPlayPanel extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 10),
+          Text(
+            'Each level is a timed stage. Survive the clock to clear it '
+            'and unlock the next. Level 30 frees the next character.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'serif',
+              fontSize: 12,
+              height: 1.4,
+              letterSpacing: 0.3,
+              color: Colors.white.withValues(alpha: 0.45),
+            ),
+          ),
+          const SizedBox(height: 18),
           Row(
             children: [
               Expanded(
                 child: _DiagramBlock(
                   title: 'Move',
-                  instruction: 'Drag the left stick to walk the fog.',
+                  instruction: 'Drag on the field to walk.',
                   child: const _JoystickDiagram(),
                 ),
               ),
@@ -162,7 +175,7 @@ class _HowToPlayPanel extends StatelessWidget {
               Expanded(
                 child: _DiagramBlock(
                   title: 'Aim & Fire',
-                  instruction: 'Hold and drag right to aim, then release.',
+                  instruction: 'Hold AIM, drag to aim, release to shoot.',
                   child: const _AimDiagram(),
                 ),
               ),

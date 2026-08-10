@@ -22,14 +22,20 @@ per each author’s terms. **Do not resell the raw art packs as asset packs.**
 
 | Project path | Source within pack |
 |--------------|--------------------|
-| `player/*_idle.png`, `*_walk.png` (+ side/up variants) | `Entities/Characters/Body_A/Animations/Idle_Base` & `Walk_Base` sheets — **same Body_A hero reused** for Wanderer / Huntress / Scholar / Brute / Ghost (palette variants can be applied later) |
+| `player/wanderer_*` | `Entities/NPC's/Rogue` Idle + Run (hooded adventurer) |
+| `player/huntress_*` | `Entities/NPC's/Citizen_F/Peasant_A` Idle + Walk |
+| `player/scholar_*` | `Entities/NPC's/Wizzard` Idle + Run |
+| `player/brute_*` | `Entities/NPC's/Knight` Idle + Run |
+| `player/ghost_*` | Rogue Idle + Run with pale ghost palette recolor |
+| (side/up sheets) | Same strip reused per facing; painter flips for left |
 | `enemies/fast/{idle,walk}.png` | `Entities/Mobs/Orc Crew/Orc - Rogue` Idle / Run sheets |
 | `enemies/tank/{idle,walk}.png` | `Entities/Mobs/Orc Crew/Orc - Warrior` Idle / Run sheets |
 | `enemies/ranged/{idle,walk}.png` | `Entities/Mobs/Skeleton Crew/Skeleton - Mage` Idle / Run sheets |
-| `environment/vegetation.png`, bushes, rocks, props | `Environment/Props/Static/*` |
+| `environment/bush_dead.png`, `bush_autumn.png`, `rock_01.png`, `rock_02.png` | Crops from `Environment/Props/Static/*` |
+| `environment/tree_01.png`, `tree_dead.png` | Crops from vegetation tall-tree row (autumn / olive) |
+| `environment/tree_gothic_a.png`, `tree_gothic_b.png` | Generated dark twisted-trunk trees (muted blue-grey canopy) for 20MTD-like foggy arenas |
 | `pickups/xp_orb.png` | Crop from `Environment/Props/Static/Resources.png` (gold collectible tile) |
 | `pickups/magnet.png` | Crop from `Environment/Props/Static/Tools.png` (circular metal blade — magnet / attractor icon stand-in) |
-| `pickups/*_sheet.png` | Full prop sheets kept for future slicing |
 
 A copy of the author’s terms is at `assets/game/SOURCE_Terms_Anokolisa.txt`.
 
@@ -80,9 +86,9 @@ Anokolisa Pixel Crawler **kept** — small chibi proportions and muted player Bo
 |-----------|--------|
 | 5 distinct character sprite sets | **Partial** — one Anokolisa Body_A set reused for all five IDs (allowed by task). Manual CC0 packs above can diversify later. |
 | 3 enemy move sets | **Done** (rogue orc / warrior orc / skeleton mage) |
-| Environment trees/obstacles | **Done** (vegetation + bush crops + rocks + props) |
+| Environment trees/obstacles | **Done** (gothic/tall trees + bush crops + rocks) |
 | XP orb | **Done** (`pickups/xp_orb.png`) |
-| Magnet power-up icon | **Done** (`pickups/magnet.png` metal disc; optional `magnet_flask.png`) |
+| Magnet power-up icon | **Done** (`pickups/magnet.png`) |
 | Free Enemy Pixel Pack (named) | **Not auto-downloaded** — see manual candidate #1 |
 
 ---

@@ -77,21 +77,21 @@ class AppAssets {
 
   static const gameEnvTree01 = 'assets/game/environment/tree_01.png';
   static const gameEnvTreeDead = 'assets/game/environment/tree_dead.png';
+  static const gameEnvTreeGothicA = 'assets/game/environment/tree_gothic_a.png';
+  static const gameEnvTreeGothicB = 'assets/game/environment/tree_gothic_b.png';
   static const gameEnvRock01 = 'assets/game/environment/rock_01.png';
   static const gameEnvRock02 = 'assets/game/environment/rock_02.png';
-  static const gameEnvBushGreen = 'assets/game/environment/bush_green.png';
   static const gameEnvBushDead = 'assets/game/environment/bush_dead.png';
   static const gameEnvBushAutumn = 'assets/game/environment/bush_autumn.png';
-  static const gameEnvBushLime = 'assets/game/environment/bush_lime.png';
 
   static const gameObstacleAssets = [
+    gameEnvTreeGothicA,
+    gameEnvTreeGothicB,
     gameEnvTree01,
     gameEnvTreeDead,
     gameEnvRock01,
     gameEnvRock02,
-    gameEnvBushGreen,
     gameEnvBushDead,
     gameEnvBushAutumn,
-    gameEnvBushLime,
   ];
 }

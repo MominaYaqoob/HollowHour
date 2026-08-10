@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../audio/audio_manager.dart';
 import '../game/aim_fire_controller.dart';
 import '../game/game_loop.dart';
+import '../game/game_mode.dart';
 import '../game/game_state.dart';
 import '../game/leveling.dart';
 import '../game/player_controller.dart';
@@ -22,9 +23,13 @@ import 'win_screen.dart';
 
 /// Gameplay HUD shell — visual presentation + wired match loop.
 class GameplayHudScreen extends StatefulWidget {
-  const GameplayHudScreen({super.key, this.hollowDepth = 5});
+  const GameplayHudScreen({
+    super.key,
+    this.stageLevel = 1,
+  });
 
-  final int hollowDepth;
+  /// Campaign stage 1–30 (duration + spawn depth derived from this).
+  final int stageLevel;
 
   @override
   State<GameplayHudScreen> createState() => _GameplayHudScreenState();
@@ -155,8 +160,11 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
 
     final economy = context.read<EconomyState>();
     final characterId = economy.equippedCharacterId ?? 'wanderer';
+    final stage = widget.stageLevel.clamp(1, 30);
     _gameState = GameState(
-      hollowDepth: widget.hollowDepth,
+      hollowDepth: stageDepthForLevel(stage),
+      gameMode: GameMode.standard,
+      matchDuration: stageDurationForLevel(stage),
       playerCharacterId: characterId,
       startingMaxHp: 100 + economy.talentLevel('maxhp') * 8,
       startingMoveSpeed: 175 + economy.talentLevel('speed') * 10.0,
@@ -355,7 +363,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            GameplayHudScreen(hollowDepth: widget.hollowDepth),
+            GameplayHudScreen(stageLevel: widget.stageLevel),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -374,21 +382,31 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     required int killCount,
     required String timeLabel,
     required int embersEarned,
+    required int levelReached,
   }) {
     if (!mounted || _ending) return;
     _ending = true;
-    context.read<EconomyState>().addEmbers(embersEarned);
+    final economy = context.read<EconomyState>();
+    economy.addEmbers(embersEarned);
+    final stage = widget.stageLevel.clamp(1, 30);
+    // Only a stage clear advances campaign progress (not deaths / partial time).
+    if (won) {
+      economy.updateCharacterLevel(_gameState.playerCharacterId, stage);
+    }
 
     final screen = won
         ? WinScreen(
             enemiesDefeated: killCount,
             timeSurvived: timeLabel,
             embersEarned: embersEarned,
+            levelReached: stage,
           )
         : GameOverScreen(
             enemiesDefeated: killCount,
             timeSurvived: timeLabel,
             embersEarned: embersEarned,
+            levelReached: stage,
+            stageLevel: stage,
           );
 
     Navigator.of(context).pushReplacement(
@@ -445,23 +463,43 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                   builder: (context, constraints) {
                     final size =
                         Size(constraints.maxWidth, constraints.maxHeight);
-                    if (size != _gameState.worldSize) {
+                    if (size != _gameState.viewSize) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _gameState.setWorldSize(size);
+                        if (mounted) _gameState.setViewSize(size);
                       });
                     }
-                    return CustomPaint(
-                      painter: _ArenaPainter(
-                        state: _gameState,
-                        playerSprites: _playerSprites,
-                        enemySprites: _enemySprites,
-                        envSprites: _envSprites,
-                        xpOrbSprite: _xpOrbSprite,
-                        magnetSprite: _magnetSprite,
-                        aimRangeAlpha: _aim.rangeIndicatorAlpha,
-                        aimRangeRadius: AimFireController.rangeIndicatorRadius,
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanStart: (details) {
+                        _player.onArenaPanStart(details.localPosition);
+                        setState(() {});
+                      },
+                      onPanUpdate: (details) {
+                        _player.onArenaPanUpdate(details.localPosition);
+                        setState(() {});
+                      },
+                      onPanEnd: (_) {
+                        _player.onArenaPanEnd();
+                        setState(() {});
+                      },
+                      onPanCancel: () {
+                        _player.onArenaPanEnd();
+                        setState(() {});
+                      },
+                      child: CustomPaint(
+                        painter: _ArenaPainter(
+                          state: _gameState,
+                          playerSprites: _playerSprites,
+                          enemySprites: _enemySprites,
+                          envSprites: _envSprites,
+                          xpOrbSprite: _xpOrbSprite,
+                          magnetSprite: _magnetSprite,
+                          aimRangeAlpha: _aim.rangeIndicatorAlpha,
+                          aimRangeRadius:
+                              AimFireController.rangeIndicatorRadius,
+                        ),
+                        size: size,
                       ),
-                      size: size,
                     );
                   },
                 ),
@@ -574,32 +612,8 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                                 ),
                               ),
 
-                            // Bottom-left joystick.
-                            Align(
-                              alignment: Alignment.bottomLeft,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.only(left: 8, bottom: 8),
-                                child: _CircleControl(
-                                  outerSize: 118,
-                                  innerSize: 48,
-                                  knuckle:
-                                      _player.knuckleOffset((118 - 48) / 2),
-                                  onPanStart: (delta) {
-                                    _player.setStickFromLocalDelta(delta, 59);
-                                    setState(() {});
-                                  },
-                                  onPanUpdate: (delta) {
-                                    _player.setStickFromLocalDelta(delta, 59);
-                                    setState(() {});
-                                  },
-                                  onPanEnd: () {
-                                    _player.clearStick();
-                                    setState(() {});
-                                  },
-                                ),
-                              ),
-                            ),
+                            // Move: drag on the playfield (no left stick overlay
+                            // so it doesn't sit on top of trees / world art).
 
                             // Bottom-right shoot/aim + ammo readout.
                             Align(
@@ -648,12 +662,9 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                                         ),
                                       ),
                                     const SizedBox(height: 6),
-                                    _CircleControl(
-                                      outerSize: 96,
-                                      innerSize: 52,
-                                      label: 'AIM',
-                                      knuckle:
-                                          _aim.knuckleOffset((96 - 52) / 2),
+                                    _AimCrosshairControl(
+                                      size: 96,
+                                      knuckle: _aim.knuckleOffset(22),
                                       onPanStart: (delta) {
                                         _aim.onPanStart(delta, 48);
                                         setState(() {});
@@ -874,14 +885,14 @@ class _ArenaPainter extends CustomPainter {
   final double aimRangeAlpha;
   final double aimRangeRadius;
 
-  static const double _playerDrawSize = 36;
+  static const double _playerDrawSize = 42;
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
-  /// Pull saturated greens toward muted grey-fog (env props).
+  /// Light fog grade for env props — keep trees visible on dark ground.
   static const ColorFilter _envMuteFilter = ColorFilter.matrix(<double>[
-    0.28, 0.42, 0.18, 0, -12,
-    0.26, 0.40, 0.18, 0, -10,
-    0.24, 0.34, 0.26, 0, -6,
+    0.72, 0.18, 0.10, 0, 8,
+    0.16, 0.70, 0.14, 0, 6,
+    0.14, 0.18, 0.68, 0, 10,
     0, 0, 0, 1, 0,
   ]);
 
@@ -895,8 +906,12 @@ class _ArenaPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // World-space draw; camera follows the player across the expanded map.
+    final cam = state.cameraTopLeft;
+    canvas.save();
+    canvas.translate(-cam.dx, -cam.dy);
+
     _paintAimRange(canvas);
-    _paintObstacles(canvas);
 
     // XP orbs
     final xpFallback = Paint()..color = const Color(0xFFE8C547);
@@ -944,29 +959,41 @@ class _ArenaPainter extends CustomPainter {
       );
     }
 
-    // Ground markers first, then sprites (enemies + player).
+    // Ground markers: obstacles + enemies + player (trees no longer float).
+    for (final o in state.obstacles) {
+      _paintGroundMarker(canvas, o.position, o.radius * 2.1);
+    }
     for (final e in state.enemies) {
       _paintGroundMarker(canvas, e.position, e.radius * 1.7);
     }
     _paintGroundMarker(canvas, state.playerPosition, 16);
 
+    // Y-sort obstacles around the player so trunks sit in the arena plane.
+    final playerY = state.playerPosition.dy;
+    _paintObstacles(canvas, onlyIf: (o) => o.position.dy < playerY);
+
     // Enemies — sprite sheets (fallback to colored circles).
     for (final e in state.enemies) {
       _paintEnemy(canvas, e);
-      // HP ring
-      final hpRatio = (e.hp / e.maxHp).clamp(0.0, 1.0);
-      final ring = Paint()
+    }
+
+    _paintPlayer(canvas);
+    // HP ring on the player character only (not enemies).
+    final playerHpRatio =
+        (state.maxHp <= 0 ? 0.0 : state.playerHp / state.maxHp).clamp(0.0, 1.0);
+    canvas.drawArc(
+      Rect.fromCircle(center: state.playerPosition, radius: 18),
+      -math.pi / 2,
+      2 * math.pi * playerHpRatio,
+      false,
+      Paint()
         ..color = Colors.white.withValues(alpha: 0.35)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2;
-      canvas.drawArc(
-        Rect.fromCircle(center: e.position, radius: e.radius + 3),
-        -math.pi / 2,
-        2 * math.pi * hpRatio,
-        false,
-        ring,
-      );
-    }
+        ..strokeWidth = 2,
+    );
+
+    // Obstacles in front of the player (occlusion).
+    _paintObstacles(canvas, onlyIf: (o) => o.position.dy >= playerY);
 
     // Projectiles
     final shotPaint = Paint()..color = const Color(0xFFFFE08A);
@@ -974,7 +1001,7 @@ class _ArenaPainter extends CustomPainter {
       canvas.drawCircle(p.position, p.radius, shotPaint);
     }
 
-    _paintPlayer(canvas);
+    canvas.restore();
   }
 
   /// Soft oval shadow under feet — cosmetic only (no hitbox change).
@@ -1011,13 +1038,19 @@ class _ArenaPainter extends CustomPainter {
     canvas.drawCircle(state.playerPosition, aimRangeRadius, edge);
   }
 
-  void _paintObstacles(Canvas canvas) {
-    // Grade trees/bushes/rocks into the arena's muted fog palette.
+  void _paintObstacles(
+    Canvas canvas, {
+    required bool Function(ObstacleEntity o) onlyIf,
+  }) {
+    final batch = state.obstacles.where(onlyIf).toList();
+    if (batch.isEmpty) return;
+
+    // Per-sprite mute filter so trees/rocks are definitely graded.
     canvas.saveLayer(null, Paint()..colorFilter = _envMuteFilter);
     final paint = Paint()..filterQuality = FilterQuality.none;
-    for (final o in state.obstacles) {
+    for (final o in batch) {
       final img = envSprites?[o.assetPath];
-      if (img == null) {
+      if (img == null || img.width <= 0 || img.height <= 0) {
         canvas.drawCircle(
           o.position,
           o.radius,
@@ -1025,10 +1058,12 @@ class _ArenaPainter extends CustomPainter {
         );
         continue;
       }
-      final dst = Rect.fromCenter(
-        center: Offset(o.position.dx, o.position.dy - o.drawHeight * 0.18),
-        width: o.drawWidth,
-        height: o.drawHeight,
+      // Foot-anchor: sprite bottom sits on the collision/shadow point.
+      final dst = Rect.fromLTWH(
+        o.position.dx - o.drawWidth / 2,
+        o.position.dy - o.drawHeight + 4,
+        o.drawWidth,
+        o.drawHeight,
       );
       canvas.drawImageRect(
         img,
@@ -1040,7 +1075,32 @@ class _ArenaPainter extends CustomPainter {
     canvas.restore();
   }
 
+  /// Soft maroon halo so enemies read against dark ground (player stays white).
+  void _paintEnemyGlow(Canvas canvas, EnemyEntity e) {
+    final r = e.radius * 1.55;
+    canvas.drawCircle(
+      e.position,
+      r,
+      Paint()..color = _maroonGlow.withValues(alpha: 0.16),
+    );
+    canvas.drawCircle(
+      e.position,
+      r * 0.72,
+      Paint()..color = _maroonGlow.withValues(alpha: 0.22),
+    );
+    canvas.drawCircle(
+      e.position,
+      r,
+      Paint()
+        ..color = _maroonGlow.withValues(alpha: 0.55)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8,
+    );
+  }
+
   void _paintEnemy(Canvas canvas, EnemyEntity e) {
+    _paintEnemyGlow(canvas, e);
+
     final sheets = enemySprites?.forKind(e.type);
     if (sheets == null) {
       final color = switch (e.type) {
@@ -1307,33 +1367,29 @@ class _PickupToast extends StatelessWidget {
   }
 }
 
-class _CircleControl extends StatelessWidget {
-  const _CircleControl({
-    required this.outerSize,
-    required this.innerSize,
-    this.label,
+/// Red crosshair aim pad (matches How-to-Play diagram; no gray AIM disc).
+class _AimCrosshairControl extends StatelessWidget {
+  const _AimCrosshairControl({
+    required this.size,
     this.knuckle = Offset.zero,
     this.onPanStart,
     this.onPanUpdate,
     this.onPanEnd,
   });
 
-  final double outerSize;
-  final double innerSize;
-  final String? label;
+  final double size;
   final Offset knuckle;
   final void Function(Offset localDeltaFromCenter)? onPanStart;
   final void Function(Offset localDeltaFromCenter)? onPanUpdate;
   final VoidCallback? onPanEnd;
 
-  Offset _delta(Offset local) =>
-      local - Offset(outerSize / 2, outerSize / 2);
+  Offset _delta(Offset local) => local - Offset(size / 2, size / 2);
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: outerSize,
-      height: outerSize,
+      width: size,
+      height: size,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onPanStart: onPanStart == null
@@ -1347,48 +1403,25 @@ class _CircleControl extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
+            // Soft hit-area ring (very subtle).
             Container(
-              width: outerSize,
-              height: outerSize,
+              width: size,
+              height: size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.06),
+                color: Colors.black.withValues(alpha: 0.18),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  width: 1.5,
+                  color: const Color(0xFFC41E1E).withValues(alpha: 0.22),
+                  width: 1.2,
                 ),
               ),
             ),
             Transform.translate(
               offset: knuckle,
-              child: Container(
-                width: innerSize,
-                height: innerSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.12),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.22),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      blurRadius: 8,
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: label == null
-                    ? null
-                    : Text(
-                        label!,
-                        style: TextStyle(
-                          fontFamily: 'serif',
-                          fontSize: 11,
-                          letterSpacing: 1.5,
-                          color: Colors.white.withValues(alpha: 0.55),
-                        ),
-                      ),
+              child: SizedBox(
+                width: size * 0.72,
+                height: size * 0.72,
+                child: const CustomPaint(painter: _AimCrosshairPainter()),
               ),
             ),
           ],
@@ -1396,6 +1429,52 @@ class _CircleControl extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AimCrosshairPainter extends CustomPainter {
+  const _AimCrosshairPainter();
+
+  static const Color _line = Color(0xFFC41E1E);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _line.withValues(alpha: 0.9)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.shortestSide * 0.28;
+
+    canvas.drawCircle(c, r, paint);
+    canvas.drawCircle(
+      c,
+      3.5,
+      Paint()..color = _line.withValues(alpha: 0.95),
+    );
+
+    final arm = size.shortestSide * 0.42;
+    final gap = r + 4;
+    canvas.drawLine(Offset(c.dx, c.dy - arm), Offset(c.dx, c.dy - gap), paint);
+    canvas.drawLine(Offset(c.dx, c.dy + gap), Offset(c.dx, c.dy + arm), paint);
+    canvas.drawLine(Offset(c.dx - arm, c.dy), Offset(c.dx - gap, c.dy), paint);
+    canvas.drawLine(Offset(c.dx + gap, c.dy), Offset(c.dx + arm, c.dy), paint);
+
+    // Soft drag hint (same spirit as help diagram).
+    final hint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.28)
+      ..strokeWidth = 1.4
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(
+      Offset(size.width - 8, 12),
+      Offset(size.width - 22, 26),
+      hint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _LevelUpOverlay extends StatelessWidget {
@@ -1413,21 +1492,21 @@ class _LevelUpOverlay extends StatelessWidget {
     _UpgradeOption(
       icon: Icons.favorite_border,
       imageAsset: AppAssets.iconHp,
-      name: 'Bloodbound',
-      description: 'Restore vitality and harden your flesh.',
+      name: 'More Health',
+      description: 'Heal yourself and raise max HP.',
       upgrade: LevelUpUpgrade.bloodbound,
     ),
     _UpgradeOption(
       icon: Icons.speed,
-      name: 'Shadow Step',
-      description: 'Move faster through the fog for a burst.',
+      name: 'Move Faster',
+      description: 'Run quicker around the map.',
       upgrade: LevelUpUpgrade.shadowStep,
     ),
     _UpgradeOption(
       icon: Icons.local_fire_department_outlined,
       imageAsset: AppAssets.iconEmbers,
-      name: 'Ember Edge',
-      description: 'Attacks leave lingering cinder damage.',
+      name: 'Stronger Shots',
+      description: 'Your attacks deal more damage.',
       upgrade: LevelUpUpgrade.emberEdge,
     ),
   ];
@@ -1441,7 +1520,7 @@ class _LevelUpOverlay extends StatelessWidget {
           children: [
             const SizedBox(height: 28),
             Text(
-              'THE HOUR DEEPENS',
+              'LEVEL UP',
               style: TextStyle(
                 fontFamily: 'serif',
                 fontSize: 16,
@@ -1457,7 +1536,7 @@ class _LevelUpOverlay extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Choose an upgrade',
+              'Pick one power-up',
               style: TextStyle(
                 fontFamily: 'serif',
                 fontSize: 12,
