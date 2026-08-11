@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../ads/ad_manager.dart';
 import '../state/economy_state.dart';
 import '../theme/field_backdrop.dart';
 import 'gameplay_hud_screen.dart';
@@ -43,6 +44,8 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
   late final Animation<double> _headlineOpacity;
   late final Animation<double> _headlineScale;
   late final Animation<double> _statsProgress;
+
+  bool _busy = false;
 
   @override
   void initState() {
@@ -115,7 +118,13 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
 
   bool get _hasNext => _cleared < EconomyState.maxCharacterLevel;
 
-  void _retryLevel() {
+  Future<void> _retryLevel() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await AdManager.instance.showInterstitial();
+    } catch (_) {}
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
@@ -129,6 +138,7 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
   }
 
   void _nextLevelGo() {
+    if (_busy) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
@@ -141,7 +151,13 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _mainMenu() {
+  Future<void> _mainMenu() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await AdManager.instance.showInterstitial();
+    } catch (_) {}
+    if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 

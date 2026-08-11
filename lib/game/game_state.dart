@@ -69,6 +69,9 @@ class GameState extends ChangeNotifier {
   bool isGameOver = false;
   bool isWin = false;
 
+  /// True after the revive offer has been shown once this run.
+  bool reviveOfferedThisRun = false;
+
   /// True while level-up cards are showing — loop freezes.
   bool awaitingLevelUp = false;
 
@@ -266,6 +269,22 @@ class GameState extends ChangeNotifier {
       playerHp = 0;
       isGameOver = true;
     }
+    notifyListeners();
+  }
+
+  /// Marks that the revive offer was presented this run (once only).
+  /// No [notifyListeners] — called mid game-loop tick before navigation.
+  void markReviveOffered() {
+    reviveOfferedThisRun = true;
+  }
+
+  /// Restores partial HP and clears game-over so the match can resume.
+  void reviveWithPartialHp({double fraction = 0.5}) {
+    final clamped = fraction.clamp(0.05, 1.0);
+    playerHp = (maxHp * clamped).clamp(1.0, maxHp);
+    isGameOver = false;
+    isPaused = false;
+    reviveOfferedThisRun = true;
     notifyListeners();
   }
 

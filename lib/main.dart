@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 
+import 'ads/ad_manager.dart';
 import 'audio/audio_manager.dart';
 import 'prefs/app_flags.dart';
 import 'screens/onboarding_screen.dart';
@@ -14,6 +16,14 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   await AudioManager.instance.init();
+  try {
+    await MobileAds.instance
+        .initialize()
+        .timeout(const Duration(seconds: 8));
+    await AdManager.instance.init().timeout(const Duration(seconds: 10));
+  } catch (e, st) {
+    debugPrint('Mobile Ads init failed: $e\n$st');
+  }
   runApp(const HollowHourApp());
 }
 

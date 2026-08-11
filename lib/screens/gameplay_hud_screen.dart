@@ -392,12 +392,40 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     required String timeLabel,
     required int embersEarned,
     required int levelReached,
+    required bool canRevive,
   }) {
     if (!mounted || _ending) return;
-    _ending = true;
+
     final economy = context.read<EconomyState>();
-    economy.addEmbers(embersEarned);
     final stage = widget.stageLevel.clamp(1, 30);
+
+    // First death: keep this HUD alive under GameOver so revive can resume.
+    if (!won && canRevive) {
+      Navigator.of(context).push(
+        PageRouteBuilder(
+          opaque: true,
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              GameOverScreen(
+            enemiesDefeated: killCount,
+            timeSurvived: timeLabel,
+            embersEarned: embersEarned,
+            levelReached: stage,
+            stageLevel: stage,
+            showReviveButton: true,
+            onConfirmLeave: () => economy.addEmbers(embersEarned),
+            onReviveSuccess: _handleReviveSuccess,
+          ),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          transitionDuration: const Duration(milliseconds: 600),
+        ),
+      );
+      return;
+    }
+
+    _ending = true;
+    economy.addEmbers(embersEarned);
     // Only a stage clear advances campaign progress (not deaths / partial time).
     if (won) {
       economy.updateCharacterLevel(_gameState.playerCharacterId, stage);
@@ -427,6 +455,15 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
         transitionDuration: const Duration(milliseconds: 600),
       ),
     );
+  }
+
+  void _handleReviveSuccess() {
+    if (!mounted) return;
+    _gameState.reviveWithPartialHp();
+    _loop.resumeAfterRevive();
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   @override

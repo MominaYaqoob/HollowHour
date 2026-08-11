@@ -14,6 +14,7 @@ typedef GameEndCallback = void Function({
   required String timeLabel,
   required int embersEarned,
   required int levelReached,
+  required bool canRevive,
 });
 
 /// Ticker-driven ~60fps match loop.
@@ -96,18 +97,50 @@ class GameLoop {
       _wasAwaitingLevelUp = false;
     }
 
-    if (!_endedDispatched && (state.isGameOver || state.isWin)) {
-      _endedDispatched = true;
-      stop();
-      final won = state.isWin;
-      final embers = state.embersEarned + (won ? 40 : 0);
+    if (!_endedDispatched && state.isWin) {
+      _dispatchEnded(won: true, canRevive: false);
+      return;
+    }
+
+    // First death: stop and surface GameOver with revive offer — do not treat
+    // as a final end until revive is declined or already offered this run.
+    if (!_endedDispatched && state.isGameOver) {
+      if (!state.reviveOfferedThisRun) {
+        state.markReviveOffered();
+        _dispatchEnded(won: false, canRevive: true);
+        return;
+      }
+      _dispatchEnded(won: false, canRevive: false);
+    }
+  }
+
+  void _dispatchEnded({required bool won, required bool canRevive}) {
+    _endedDispatched = true;
+    stop();
+    final embers = state.embersEarned + (won ? 40 : 0);
+    final killCount = state.killCount;
+    final timeLabel = state.elapsedLabel;
+    final levelReached = state.survivalLevelReached;
+    // Navigate after this frame — avoid pushing routes mid-ticker tick.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       onEnded?.call(
         won: won,
-        killCount: state.killCount,
-        timeLabel: state.elapsedLabel,
+        killCount: killCount,
+        timeLabel: timeLabel,
         embersEarned: embers,
-        levelReached: state.survivalLevelReached,
+        levelReached: levelReached,
+        canRevive: canRevive,
       );
+    });
+  }
+
+  /// Restarts the ticker after a successful revive.
+  void resumeAfterRevive() {
+    _endedDispatched = false;
+    _last = Duration.zero;
+    if (!_ticker.isActive) {
+      _started = true;
+      _ticker.start();
     }
   }
 }
