@@ -268,7 +268,12 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                     height: 56,
                     entry: _entryController,
                     stagger: 0.0,
-                    onTap: () => _open(const PreGameSetupScreen()),
+                    onTap: () {
+                      final economy = context.read<EconomyState>();
+                      final id = economy.equippedCharacterId ?? 'wanderer';
+                      final stage = economy.nextPlayableLevel(id);
+                      _open(PreGameSetupScreen(stageLevel: stage));
+                    },
                   ),
                   const SizedBox(height: 18),
                   _MenuButton(
@@ -281,7 +286,7 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                   ),
                   const SizedBox(height: 14),
                   _MenuButton(
-                    label: 'Talents',
+                    label: 'Upgrades',
                     width: 170,
                     height: 42,
                     entry: _entryController,

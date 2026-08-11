@@ -18,7 +18,7 @@ class AimFireController {
   /// Visual-only fade for the on-player range ring (0–1).
   double rangeIndicatorAlpha = 0;
 
-  /// Visual-only ring radius (px); does not affect fire logic.
+  /// Visual-only ring radius fallback when state has no aim range set.
   static const double rangeIndicatorRadius = 190;
 
   bool get isAiming => _dragging && aim != Offset.zero;
@@ -80,8 +80,9 @@ class AimFireController {
       ProjectileEntity(
         position: state.playerPosition,
         direction: dir,
-        speed: 420,
+        speed: state.projectileSpeed,
         damage: state.projectileDamage,
+        radius: state.projectileRadius,
       ),
     );
     state.currentAmmo -= 1;

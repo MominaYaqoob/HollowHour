@@ -46,6 +46,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   @override
   void initState() {
     super.initState();
+    // Keep ambient running from first screen if Background Sound is on.
+    AudioManager.instance.playMusic();
 
     final rng = math.Random(7);
     _embers = List.generate(12, (i) {
@@ -368,7 +370,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                       ),
                                       const SizedBox(height: 14),
                                       Text(
-                                        'Drag to move. Aim on the right. Embers buy power.',
+                                        'Left stick to move. Aim on the right. Embers buy power.',
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           fontFamily: 'serif',

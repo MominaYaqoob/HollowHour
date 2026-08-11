@@ -559,8 +559,10 @@ class _StatsPanel extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Levels  ·  Cleared $clearedLevel/${EconomyState.maxCharacterLevel}'
-                '  ·  Play $selectedLevel (${stageDurationLabel(selectedLevel)})',
+                canInteract
+                    ? 'Levels  ·  Cleared $clearedLevel/${EconomyState.maxCharacterLevel}'
+                        '  ·  Play $selectedLevel (${stageDurationLabel(selectedLevel)})'
+                    : 'Levels  ·  Unlock character to play stages',
                 style: TextStyle(
                   fontFamily: 'serif',
                   fontSize: 11,
@@ -610,9 +612,10 @@ class _LevelCirclesGrid extends StatelessWidget {
         for (var level = 1; level <= max; level++)
           _LevelCircle(
             level: level,
-            unlocked: level <= clearedLevel + 1,
-            cleared: level <= clearedLevel,
-            current: level == selectedLevel,
+            // Locked characters: every stage stays locked (including Level 1).
+            unlocked: canInteract && level <= clearedLevel + 1,
+            cleared: canInteract && level <= clearedLevel,
+            current: canInteract && level == selectedLevel,
             size: _size,
             accent: _maroonGlow,
             onTap: canInteract && level <= clearedLevel + 1

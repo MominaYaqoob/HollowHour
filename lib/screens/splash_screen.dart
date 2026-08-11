@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../audio/audio_manager.dart';
 import '../theme/app_assets.dart';
 import '../theme/field_backdrop.dart';
 import 'main_menu_screen.dart';
@@ -35,6 +36,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
+    AudioManager.instance.playMusic();
 
     _fogController = AnimationController(
       vsync: this,

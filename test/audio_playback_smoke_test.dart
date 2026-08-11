@@ -28,6 +28,9 @@ void main() {
     await audio.setSfxEnabled(false);
     audio.playTap(); // should no-op
     await audio.setSfxEnabled(true);
+    await audio.setVibrationEnabled(false);
+    expect(audio.vibrationEnabled, isFalse);
+    await audio.setVibrationEnabled(true);
     await audio.stopMusic();
   });
 }

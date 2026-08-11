@@ -3,7 +3,7 @@ import 'dart:ui';
 
 import 'game_state.dart';
 
-/// Moves the player from arena finger-drag and/or the bottom-left joystick.
+/// Moves the player from the bottom-left joystick.
 class PlayerController {
   PlayerController(this.state);
 
@@ -11,9 +11,6 @@ class PlayerController {
 
   /// Normalized stick vector in [-1, 1], length capped at 1.
   Offset stick = Offset.zero;
-
-  /// Touch origin for playfield drag-to-move (null when not dragging).
-  Offset? arenaDragOrigin;
 
   void setStickFromLocalDelta(Offset localDelta, double outerRadius) {
     if (outerRadius <= 0) {
@@ -33,23 +30,15 @@ class PlayerController {
     stick = len > 1 ? clamped / len : clamped;
   }
 
-  /// 20MTD-style: drag on the arena; direction = finger offset from touch start.
-  void onArenaPanStart(Offset localPos) {
-    arenaDragOrigin = localPos;
-  }
-
-  void onArenaPanUpdate(Offset localPos) {
-    final origin = arenaDragOrigin;
-    if (origin == null) return;
-    setStickFromLocalDelta(localPos - origin, 64);
-  }
-
-  void onArenaPanEnd() {
-    arenaDragOrigin = null;
-    clearStick();
-  }
-
   void clearStick() => stick = Offset.zero;
+
+  /// Visual knuckle offset inside the joystick (pixels).
+  Offset knuckleOffset(double maxTravel) {
+    final len = stick.distance;
+    if (len == 0) return Offset.zero;
+    final capped = math.min(len, 1.0);
+    return stick / len * capped * maxTravel;
+  }
 
   void update(Duration delta) {
     final dt = delta.inMicroseconds / 1e6;

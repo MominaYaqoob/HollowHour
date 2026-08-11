@@ -15,6 +15,9 @@ class GameState extends ChangeNotifier {
     double startingMoveSpeed = 175,
     double startingDamage = 12,
     double startingFireCooldown = 0.38,
+    double startingProjectileSpeed = 420,
+    double startingProjectileRadius = 5,
+    double startingAimRangeRadius = 190,
   })  : matchDuration =
             matchDuration ?? gameMode.matchDuration,
         maxHp = startingMaxHp,
@@ -22,6 +25,9 @@ class GameState extends ChangeNotifier {
         moveSpeed = startingMoveSpeed,
         projectileDamage = startingDamage,
         fireCooldownSeconds = startingFireCooldown,
+        projectileSpeed = startingProjectileSpeed,
+        projectileRadius = startingProjectileRadius,
+        aimRangeRadius = startingAimRangeRadius,
         timeRemaining = matchDuration ?? gameMode.matchDuration;
 
   final int hollowDepth;
@@ -66,10 +72,13 @@ class GameState extends ChangeNotifier {
   /// True while level-up cards are showing — loop freezes.
   bool awaitingLevelUp = false;
 
-  /// Combat modifiers (tuned by talents + level-up picks).
+  /// Combat modifiers (tuned by talents + weapons + runes + level-up picks).
   double moveSpeed;
   double projectileDamage;
   double fireCooldownSeconds;
+  double projectileSpeed;
+  double projectileRadius;
+  double aimRangeRadius;
 
   /// Magazine — depletes on fire, reloads when empty.
   int maxAmmo = 6;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -58,6 +60,8 @@ class _RootGateState extends State<_RootGate> {
 
   Future<bool> _load() async {
     await context.read<EconomyState>().loadFromDisk();
+    // Start ambient as early as possible (respects persisted Music switch).
+    unawaited(AudioManager.instance.playMusic());
     return AppFlags.hasSeenOnboarding();
   }
 

@@ -188,7 +188,7 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
                   const ThemedUiIcon(AppAssets.iconEmbers, size: 20),
                   const SizedBox(width: 8),
                   Text(
-                    'Talents',
+                    'Upgrades',
                     style: TextStyle(
                       fontFamily: 'serif',
                       fontSize: 18,

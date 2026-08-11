@@ -167,7 +167,7 @@ class _HowToPlayPanel extends StatelessWidget {
               Expanded(
                 child: _DiagramBlock(
                   title: 'Move',
-                  instruction: 'Drag on the field to walk.',
+                  instruction: 'Use the left stick to walk.',
                   child: const _JoystickDiagram(),
                 ),
               ),

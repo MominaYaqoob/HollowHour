@@ -11,6 +11,14 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  test('fresh economy starts with Wanderer only and 1000 Embers', () {
+    final economy = EconomyState();
+    expect(economy.embers, 1000);
+    expect(economy.ownsCharacter('wanderer'), isTrue);
+    expect(economy.ownsCharacter('huntress'), isFalse);
+    expect(economy.nextPlayableLevel('wanderer'), 1);
+  });
+
   test('stage unlocks: Lv1 free, clear N unlocks N+1, Lv30 unlocks next char', () {
     final economy = EconomyState();
     expect(economy.bestLevelFor('wanderer'), 0);

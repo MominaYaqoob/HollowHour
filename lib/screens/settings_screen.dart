@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import '../audio/audio_manager.dart';
 import '../theme/app_assets.dart';
 import '../theme/themed_chrome.dart';
+import 'privacy_policy_screen.dart';
 
-/// Settings — audio toggles wired to [AudioManager] (persisted).
+/// Settings — audio/haptics toggles wired to [AudioManager] (persisted).
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -19,7 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   late bool _sfx;
   late bool _music;
-  bool _vibration = true;
+  late bool _vibration;
 
   @override
   void initState() {
@@ -27,6 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final audio = AudioManager.instance;
     _sfx = audio.sfxEnabled;
     _music = audio.musicEnabled;
+    _vibration = audio.vibrationEnabled;
   }
 
   Future<void> _confirmReset() async {
@@ -90,6 +92,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _openPrivacyPolicy() {
+    AudioManager.instance.playTap();
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const PrivacyPolicyScreen(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 350),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -134,7 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
           _ToggleRow(
-            label: 'Music',
+            label: 'Background Sound',
             value: _music,
             onChanged: (v) async {
               setState(() => _music = v);
@@ -147,7 +163,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _ToggleRow(
             label: 'Vibration',
             value: _vibration,
-            onChanged: (v) => setState(() => _vibration = v),
+            onChanged: (v) async {
+              setState(() => _vibration = v);
+              await AudioManager.instance.setVibrationEnabled(v);
+              if (v) AudioManager.instance.playTap();
+            },
+          ),
+          const SizedBox(height: 20),
+          _sectionLabel('Legal'),
+          const SizedBox(height: 8),
+          _NavRow(
+            label: 'Privacy Policy',
+            onTap: _openPrivacyPolicy,
           ),
           const SizedBox(height: 28),
           _sectionLabel('Danger Zone'),
@@ -221,7 +248,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'A dark horror-survival experience. UI demo for presentation — the Hollow waits.',
+                  'A dark horror-survival experience. Survive the Hollow, '
+                  'or become part of it.',
                   style: TextStyle(
                     fontFamily: 'serif',
                     fontSize: 12,
@@ -296,6 +324,61 @@ class _ToggleRow extends StatelessWidget {
             inactiveTrackColor: Colors.white12,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NavRow extends StatelessWidget {
+  const _NavRow({
+    required this.label,
+    required this.onTap,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  static const Color _maroonGlow = Color(0xFFC41E1E);
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 15,
+                    letterSpacing: 1,
+                    color: Colors.white.withValues(alpha: 0.8),
+                  ),
+                ),
+              ),
+              Text(
+                '→',
+                style: TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 18,
+                  color: _maroonGlow.withValues(alpha: 0.85),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

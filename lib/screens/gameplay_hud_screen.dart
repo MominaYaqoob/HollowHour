@@ -12,6 +12,8 @@ import '../game/game_mode.dart';
 import '../game/game_state.dart';
 import '../game/leveling.dart';
 import '../game/player_controller.dart';
+import '../game/rune_catalog.dart';
+import '../game/weapon_catalog.dart';
 import '../prefs/app_flags.dart';
 import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
@@ -161,15 +163,24 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     final economy = context.read<EconomyState>();
     final characterId = economy.equippedCharacterId ?? 'wanderer';
     final stage = widget.stageLevel.clamp(1, 30);
+    final weapon = WeaponCatalog.forId(economy.equippedWeaponId);
+    final runes = RuneCatalog.combined(economy.equippedRuneIds);
+    final talentDamage = 12 + economy.talentLevel('damage') * 2.0;
     _gameState = GameState(
       hollowDepth: stageDepthForLevel(stage),
       gameMode: GameMode.standard,
       matchDuration: stageDurationForLevel(stage),
       playerCharacterId: characterId,
-      startingMaxHp: 100 + economy.talentLevel('maxhp') * 8,
-      startingMoveSpeed: 175 + economy.talentLevel('speed') * 10.0,
-      startingDamage: 12 + economy.talentLevel('damage') * 2.0,
-      startingFireCooldown: 0.38,
+      startingMaxHp:
+          100 + economy.talentLevel('maxhp') * 8 + runes.maxHp,
+      startingMoveSpeed:
+          175 + economy.talentLevel('speed') * 10.0 + runes.moveSpeed,
+      startingDamage: (talentDamage + runes.damage) * weapon.damageMul,
+      startingFireCooldown: 0.38 * weapon.fireCooldownMul,
+      startingProjectileSpeed: 420 * weapon.projectileSpeedMul,
+      startingProjectileRadius: 5 * weapon.projectileRadiusMul,
+      startingAimRangeRadius:
+          AimFireController.rangeIndicatorRadius * weapon.aimRangeMul,
     );
     _gameState.addListener(_onGameStateChanged);
 
@@ -299,7 +310,6 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     if (!mounted) return;
     if (!seen) {
       _gameState.setPaused(true);
-      AudioManager.instance.pauseMusic();
       setState(() {
         _showTutorial = true;
         _persistTutorialFlag = true;
@@ -321,7 +331,6 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   Future<void> _openLevelUp() async {
     if (!mounted || _showLevelUp) return;
     AudioManager.instance.playLevelUp();
-    AudioManager.instance.pauseMusic();
     setState(() => _showLevelUp = true);
     await _levelUpController.forward(from: 0);
   }
@@ -468,38 +477,18 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                         if (mounted) _gameState.setViewSize(size);
                       });
                     }
-                    return GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onPanStart: (details) {
-                        _player.onArenaPanStart(details.localPosition);
-                        setState(() {});
-                      },
-                      onPanUpdate: (details) {
-                        _player.onArenaPanUpdate(details.localPosition);
-                        setState(() {});
-                      },
-                      onPanEnd: (_) {
-                        _player.onArenaPanEnd();
-                        setState(() {});
-                      },
-                      onPanCancel: () {
-                        _player.onArenaPanEnd();
-                        setState(() {});
-                      },
-                      child: CustomPaint(
-                        painter: _ArenaPainter(
-                          state: _gameState,
-                          playerSprites: _playerSprites,
-                          enemySprites: _enemySprites,
-                          envSprites: _envSprites,
-                          xpOrbSprite: _xpOrbSprite,
-                          magnetSprite: _magnetSprite,
+                    return CustomPaint(
+                      painter: _ArenaPainter(
+                        state: _gameState,
+                        playerSprites: _playerSprites,
+                        enemySprites: _enemySprites,
+                        envSprites: _envSprites,
+                        xpOrbSprite: _xpOrbSprite,
+                        magnetSprite: _magnetSprite,
                           aimRangeAlpha: _aim.rangeIndicatorAlpha,
-                          aimRangeRadius:
-                              AimFireController.rangeIndicatorRadius,
-                        ),
-                        size: size,
+                          aimRangeRadius: _gameState.aimRangeRadius,
                       ),
+                      size: size,
                     );
                   },
                 ),
@@ -612,8 +601,31 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                                 ),
                               ),
 
-                            // Move: drag on the playfield (no left stick overlay
-                            // so it doesn't sit on top of trees / world art).
+                            // Bottom-left move joystick (help-diagram style).
+                            Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.only(left: 8, bottom: 8),
+                                child: _MoveJoystickControl(
+                                  outerSize: 96,
+                                  innerSize: 42,
+                                  knuckle: _player.knuckleOffset((96 - 42) / 2),
+                                  onPanStart: (delta) {
+                                    _player.setStickFromLocalDelta(delta, 48);
+                                    setState(() {});
+                                  },
+                                  onPanUpdate: (delta) {
+                                    _player.setStickFromLocalDelta(delta, 48);
+                                    setState(() {});
+                                  },
+                                  onPanEnd: () {
+                                    _player.clearStick();
+                                    setState(() {});
+                                  },
+                                ),
+                              ),
+                            ),
 
                             // Bottom-right shoot/aim + ammo readout.
                             Align(
@@ -757,7 +769,6 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                       _persistTutorialFlag = false;
                     });
                     _gameState.setPaused(false);
-                    AudioManager.instance.resumeMusic();
                   },
                 ),
               ],
@@ -885,7 +896,10 @@ class _ArenaPainter extends CustomPainter {
   final double aimRangeAlpha;
   final double aimRangeRadius;
 
+  /// On-screen size for a walk-sheet frame (64px source). Idle sheets are
+  /// often 32px and must scale with source pixels so idle ≠ 2× walk.
   static const double _playerDrawSize = 42;
+  static const double _playerRefFramePx = 64;
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
   /// Light fog grade for env props — keep trees visible on dark ground.
@@ -1026,16 +1040,37 @@ class _ArenaPainter extends CustomPainter {
 
   void _paintAimRange(Canvas canvas) {
     if (aimRangeAlpha <= 0.01) return;
-    final opacity = (0.18 * aimRangeAlpha).clamp(0.0, 0.2);
-    final fill = Paint()
-      ..color = _maroonGlow.withValues(alpha: opacity)
-      ..style = PaintingStyle.fill;
-    final edge = Paint()
-      ..color = _maroonGlow.withValues(alpha: opacity * 1.35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-    canvas.drawCircle(state.playerPosition, aimRangeRadius, fill);
-    canvas.drawCircle(state.playerPosition, aimRangeRadius, edge);
+    // Range fill/ring removed — only the dotted trajectory aids aim.
+    _paintAimTrajectory(canvas);
+  }
+
+  /// Visual-only dotted aim line (hit detection unchanged).
+  void _paintAimTrajectory(Canvas canvas) {
+    if (aimRangeAlpha <= 0.01) return;
+    final origin = state.playerPosition;
+    final dir = Offset(
+      math.cos(state.facingAngle),
+      math.sin(state.facingAngle),
+    );
+    final end = origin + dir * aimRangeRadius;
+    final paint = Paint()
+      ..color = _maroonGlow.withValues(alpha: (0.55 * aimRangeAlpha).clamp(0.0, 0.7))
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    const dash = 7.0;
+    const gap = 5.0;
+    final total = (end - origin).distance;
+    if (total < 1) return;
+    final unit = (end - origin) / total;
+    var drawn = 0.0;
+    while (drawn < total) {
+      final a = origin + unit * drawn;
+      final b = origin + unit * math.min(drawn + dash, total);
+      canvas.drawLine(a, b, paint);
+      drawn += dash + gap;
+    }
   }
 
   void _paintObstacles(
@@ -1196,10 +1231,12 @@ class _ArenaPainter extends CustomPainter {
       frameW.toDouble(),
       frameH.toDouble(),
     );
+    // Same world px per source px for idle (32) and walk (64) sheets.
+    final scale = _playerDrawSize / _playerRefFramePx;
     final dst = Rect.fromCenter(
       center: const Offset(0, -3),
-      width: _playerDrawSize,
-      height: _playerDrawSize * (frameH / frameW),
+      width: frameW * scale,
+      height: frameH * scale,
     );
 
     canvas.save();
@@ -1362,6 +1399,85 @@ class _PickupToast extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Left move stick — grey ring + maroon knuckle (How-to-Play diagram).
+class _MoveJoystickControl extends StatelessWidget {
+  const _MoveJoystickControl({
+    required this.outerSize,
+    required this.innerSize,
+    this.knuckle = Offset.zero,
+    this.onPanStart,
+    this.onPanUpdate,
+    this.onPanEnd,
+  });
+
+  final double outerSize;
+  final double innerSize;
+  final Offset knuckle;
+  final void Function(Offset localDeltaFromCenter)? onPanStart;
+  final void Function(Offset localDeltaFromCenter)? onPanUpdate;
+  final VoidCallback? onPanEnd;
+
+  Offset _delta(Offset local) =>
+      local - Offset(outerSize / 2, outerSize / 2);
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: outerSize,
+      height: outerSize,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: onPanStart == null
+            ? null
+            : (details) => onPanStart!(_delta(details.localPosition)),
+        onPanUpdate: onPanUpdate == null
+            ? null
+            : (details) => onPanUpdate!(_delta(details.localPosition)),
+        onPanEnd: onPanEnd == null ? null : (_) => onPanEnd!(),
+        onPanCancel: onPanEnd,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: outerSize,
+              height: outerSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.06),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.22),
+                  width: 1.5,
+                ),
+              ),
+            ),
+            Transform.translate(
+              offset: knuckle,
+              child: Container(
+                width: innerSize,
+                height: innerSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF8B1A1A).withValues(alpha: 0.85),
+                  border: Border.all(
+                    color: const Color(0xFFC41E1E),
+                    width: 1.4,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFC41E1E).withValues(alpha: 0.35),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,14 +1,16 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// App-wide music + SFX. Missing/corrupt assets fail silently.
+/// App-wide music + SFX + haptics. Missing/corrupt assets fail silently.
 class AudioManager {
   AudioManager._();
   static final AudioManager instance = AudioManager._();
 
   static const _musicKey = 'audio_music_enabled';
   static const _sfxKey = 'audio_sfx_enabled';
+  static const _vibrationKey = 'audio_vibration_enabled';
 
   static const _musicAsset = 'audio/music_ambient.mp3';
   static const _fire = 'audio/sfx_fire.mp3';
@@ -26,6 +28,7 @@ class AudioManager {
 
   bool musicEnabled = true;
   bool sfxEnabled = true;
+  bool vibrationEnabled = true;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -33,6 +36,7 @@ class AudioManager {
       final prefs = await SharedPreferences.getInstance();
       musicEnabled = prefs.getBool(_musicKey) ?? true;
       sfxEnabled = prefs.getBool(_sfxKey) ?? true;
+      vibrationEnabled = prefs.getBool(_vibrationKey) ?? true;
     } catch (e) {
       debugPrint('AudioManager.init prefs failed: $e');
     }
@@ -72,6 +76,16 @@ class AudioManager {
     }
   }
 
+  Future<void> setVibrationEnabled(bool enabled) async {
+    vibrationEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_vibrationKey, enabled);
+    } catch (e) {
+      debugPrint('AudioManager.setVibrationEnabled prefs failed: $e');
+    }
+  }
+
   Future<AudioPlayer?> _musicPlayer() async {
     if (!_initialized) await init();
     if (_music != null) return _music;
@@ -87,6 +101,7 @@ class AudioManager {
     }
   }
 
+  /// Start (or resume) looping music if the user has Background Sound on.
   Future<void> playMusic() async {
     if (!_initialized) await init();
     if (!musicEnabled) return;
@@ -107,6 +122,7 @@ class AudioManager {
     }
   }
 
+  /// Temporary pause (e.g. Pause overlay). Does not clear the Music switch.
   Future<void> pauseMusic() async {
     final player = _music;
     if (player == null) return;
@@ -150,12 +166,54 @@ class AudioManager {
 
   void playFire() => _playSfx(_fire);
   void playHit() => _playSfx(_hit);
-  void playEnemyDeath() => _playSfx(_enemyDeath);
-  void playDamage() => _playSfx(_damage);
+
+  void playEnemyDeath() {
+    _hapticSelection();
+    _playSfx(_enemyDeath);
+  }
+
+  void playDamage() {
+    _hapticMedium();
+    _playSfx(_damage);
+  }
+
   void playPickup() => _playSfx(_pickup);
-  void playLevelUp() => _playSfx(_levelUp);
-  void playTap() => _playSfx(_tap);
-  void playPurchase() => _playSfx(_purchase);
+
+  void playLevelUp() {
+    _hapticLight();
+    _playSfx(_levelUp);
+  }
+
+  void playTap() {
+    _hapticLight();
+    _playSfx(_tap);
+  }
+
+  void playPurchase() {
+    _hapticSelection();
+    _playSfx(_purchase);
+  }
+
+  void _hapticLight() {
+    if (!vibrationEnabled) return;
+    try {
+      HapticFeedback.lightImpact();
+    } catch (_) {}
+  }
+
+  void _hapticMedium() {
+    if (!vibrationEnabled) return;
+    try {
+      HapticFeedback.mediumImpact();
+    } catch (_) {}
+  }
+
+  void _hapticSelection() {
+    if (!vibrationEnabled) return;
+    try {
+      HapticFeedback.selectionClick();
+    } catch (_) {}
+  }
 
   Future<void> _playSfx(String asset) async {
     if (!_initialized) await init();
