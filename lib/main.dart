@@ -17,6 +17,12 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   await AudioManager.instance.init();
+  // Start UI first — never block/crash launch on AdMob native init.
+  runApp(const HollowHourApp());
+  unawaited(_initMobileAdsSafely());
+}
+
+Future<void> _initMobileAdsSafely() async {
   try {
     await MobileAds.instance
         .initialize()
@@ -25,7 +31,6 @@ Future<void> main() async {
   } catch (e, st) {
     debugPrint('Mobile Ads init failed: $e\n$st');
   }
-  runApp(const HollowHourApp());
 }
 
 class HollowHourApp extends StatelessWidget {

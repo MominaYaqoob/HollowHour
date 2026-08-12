@@ -25,9 +25,21 @@ class _ConnectivityGateState extends State<ConnectivityGate> {
   @override
   void initState() {
     super.initState();
-    unawaited(_refresh());
-    _subscription =
-        _connectivity.onConnectivityChanged.listen(_applyResults);
+    // Fail-open by default so a broken plugin never bricks launch.
+    _online = true;
+    try {
+      unawaited(_refresh());
+      _subscription = _connectivity.onConnectivityChanged.listen(
+        _applyResults,
+        onError: (Object e, StackTrace st) {
+          debugPrint('Connectivity stream error: $e\n$st');
+        },
+        cancelOnError: false,
+      );
+    } catch (e, st) {
+      debugPrint('Connectivity gate init failed: $e\n$st');
+      _online = true;
+    }
   }
 
   @override
@@ -51,9 +63,9 @@ class _ConnectivityGateState extends State<ConnectivityGate> {
       _applyResults(results);
     } catch (e, st) {
       debugPrint('Connectivity check failed: $e\n$st');
-      // Fail closed — block until we can confirm a link.
-      if (mounted && _online != false) {
-        setState(() => _online = false);
+      // Fail open — do not force offline block if the check itself fails.
+      if (mounted && _online != true) {
+        setState(() => _online = true);
       }
     }
   }
