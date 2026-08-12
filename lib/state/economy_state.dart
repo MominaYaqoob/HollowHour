@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Shared economy / progress state, persisted via SharedPreferences.
 class EconomyState extends ChangeNotifier {
   EconomyState() {
-    embers = 1000;
+    embers = 0;
     ownedCharacterIds = {'wanderer'};
     ownedWeaponIds = {'blade', 'pistol'};
     ownedRuneIds = {'gale'};

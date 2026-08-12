@@ -33,6 +33,8 @@ class FieldBackdrop extends StatelessWidget {
                   Image.asset(
                     AppAssets.bgField,
                     fit: BoxFit.cover,
+                    // Decode at phone-friendly size — less RAM / hitching.
+                    cacheWidth: 1280,
                     errorBuilder: (_, _, _) => const SizedBox.shrink(),
                   ),
                   DecoratedBox(
@@ -69,6 +71,7 @@ class FieldBackdrop extends StatelessWidget {
               child: Image.asset(
                 AppAssets.bgFog,
                 fit: BoxFit.cover,
+                cacheWidth: 1280,
                 color: Colors.white,
                 colorBlendMode: BlendMode.modulate,
                 errorBuilder: (_, _, _) => const SizedBox.shrink(),

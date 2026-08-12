@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../ads/ad_manager.dart';
 import '../audio/audio_manager.dart';
 import '../game/aim_fire_controller.dart';
 import '../game/game_loop.dart';
@@ -453,6 +454,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     final stage = widget.stageLevel.clamp(1, 30);
 
     // First death: keep this HUD alive under GameOver so revive can resume.
+    // (No end-of-level interstitial here — player may still revive.)
     if (!won && canRevive) {
       Navigator.of(context).push(
         PageRouteBuilder(
@@ -478,11 +480,33 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     }
 
     _ending = true;
+    unawaited(_finishRunWithInterstitial(
+      won: won,
+      killCount: killCount,
+      timeLabel: timeLabel,
+      embersEarned: embersEarned,
+      stage: stage,
+    ));
+  }
+
+  Future<void> _finishRunWithInterstitial({
+    required bool won,
+    required int killCount,
+    required String timeLabel,
+    required int embersEarned,
+    required int stage,
+  }) async {
+    final economy = context.read<EconomyState>();
     economy.addEmbers(embersEarned);
-    // Only a stage clear advances campaign progress (not deaths / partial time).
     if (won) {
       economy.updateCharacterLevel(_gameState.playerCharacterId, stage);
     }
+
+    // Level end — full-screen TEST interstitial (skip if unload / fail).
+    try {
+      await AdManager.instance.showInterstitial();
+    } catch (_) {}
+    if (!mounted) return;
 
     final screen = won
         ? WinScreen(
@@ -720,18 +744,17 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                         child: _MoveJoystickControl(
                           outerSize: 96,
                           innerSize: 42,
-                          knuckle: _player.knuckleOffset((96 - 42) / 2),
+                          maxKnuckle: (96 - 42) / 2,
+                          readKnuckle: () =>
+                              _player.knuckleOffset((96 - 42) / 2),
                           onPanStart: (delta) {
                             _player.setStickFromLocalDelta(delta, 48);
-                            setState(() {});
                           },
                           onPanUpdate: (delta) {
                             _player.setStickFromLocalDelta(delta, 48);
-                            setState(() {});
                           },
                           onPanEnd: () {
                             _player.clearStick();
-                            setState(() {});
                           },
                         ),
                       ),
@@ -825,18 +848,16 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                             const SizedBox(height: 6),
                             _AimCrosshairControl(
                               size: 96,
-                              knuckle: _aim.knuckleOffset(22),
+                              maxKnuckle: 22,
+                              readKnuckle: () => _aim.knuckleOffset(22),
                               onPanStart: (delta) {
                                 _aim.onPanStart(delta, 48);
-                                setState(() {});
                               },
                               onPanUpdate: (delta) {
                                 _aim.onPanUpdate(delta, 48);
-                                setState(() {});
                               },
                               onPanEnd: () {
                                 _aim.onPanEnd();
-                                setState(() {});
                               },
                             ),
                           ],
@@ -1364,9 +1385,10 @@ class _ArenaPainter extends CustomPainter {
     final batch = state.obstacles.where(onlyIf).toList();
     if (batch.isEmpty) return;
 
-    // Per-sprite mute filter so trees/rocks are definitely graded.
-    canvas.saveLayer(null, Paint()..colorFilter = _envMuteFilter);
-    final paint = Paint()..filterQuality = FilterQuality.none;
+    // Per-sprite mute via Paint.colorFilter (avoid expensive saveLayer).
+    final paint = Paint()
+      ..filterQuality = FilterQuality.none
+      ..colorFilter = _envMuteFilter;
     for (final o in batch) {
       final img = envSprites?[o.assetPath];
       if (img == null || img.width <= 0 || img.height <= 0) {
@@ -1391,7 +1413,6 @@ class _ArenaPainter extends CustomPainter {
         paint,
       );
     }
-    canvas.restore();
   }
 
   /// Soft maroon halo so enemies read against dark ground (player stays white).
@@ -1453,7 +1474,7 @@ class _ArenaPainter extends CustomPainter {
       height: drawSize * (frameH / frameW),
     );
 
-    canvas.saveLayer(null, Paint()..colorFilter = _enemyMuteFilter);
+    canvas.save();
     canvas.translate(e.position.dx, e.position.dy);
     if (e.facingLeft) {
       canvas.scale(-1, 1);
@@ -1462,7 +1483,9 @@ class _ArenaPainter extends CustomPainter {
       sheet,
       src,
       dst,
-      Paint()..filterQuality = FilterQuality.none,
+      Paint()
+        ..filterQuality = FilterQuality.none
+        ..colorFilter = _enemyMuteFilter,
     );
     canvas.restore();
   }
@@ -1699,11 +1722,13 @@ class _PickupToast extends StatelessWidget {
 }
 
 /// Left move stick — grey ring + maroon knuckle (How-to-Play diagram).
-class _MoveJoystickControl extends StatelessWidget {
+/// Local [setState] only — does not rebuild the whole gameplay HUD.
+class _MoveJoystickControl extends StatefulWidget {
   const _MoveJoystickControl({
     required this.outerSize,
     required this.innerSize,
-    this.knuckle = Offset.zero,
+    required this.maxKnuckle,
+    required this.readKnuckle,
     this.onPanStart,
     this.onPanUpdate,
     this.onPanEnd,
@@ -1711,35 +1736,64 @@ class _MoveJoystickControl extends StatelessWidget {
 
   final double outerSize;
   final double innerSize;
-  final Offset knuckle;
+  final double maxKnuckle;
+  final Offset Function() readKnuckle;
   final void Function(Offset localDeltaFromCenter)? onPanStart;
   final void Function(Offset localDeltaFromCenter)? onPanUpdate;
   final VoidCallback? onPanEnd;
 
+  @override
+  State<_MoveJoystickControl> createState() => _MoveJoystickControlState();
+}
+
+class _MoveJoystickControlState extends State<_MoveJoystickControl> {
+  Offset _knuckle = Offset.zero;
+
   Offset _delta(Offset local) =>
-      local - Offset(outerSize / 2, outerSize / 2);
+      local - Offset(widget.outerSize / 2, widget.outerSize / 2);
+
+  void _syncKnuckle() {
+    final next = widget.readKnuckle();
+    if (next != _knuckle) setState(() => _knuckle = next);
+  }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: outerSize,
-      height: outerSize,
+      width: widget.outerSize,
+      height: widget.outerSize,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onPanStart: onPanStart == null
+        onPanStart: widget.onPanStart == null
             ? null
-            : (details) => onPanStart!(_delta(details.localPosition)),
-        onPanUpdate: onPanUpdate == null
+            : (details) {
+                widget.onPanStart!(_delta(details.localPosition));
+                _syncKnuckle();
+              },
+        onPanUpdate: widget.onPanUpdate == null
             ? null
-            : (details) => onPanUpdate!(_delta(details.localPosition)),
-        onPanEnd: onPanEnd == null ? null : (_) => onPanEnd!(),
-        onPanCancel: onPanEnd,
+            : (details) {
+                widget.onPanUpdate!(_delta(details.localPosition));
+                _syncKnuckle();
+              },
+        onPanEnd: widget.onPanEnd == null
+            ? null
+            : (_) {
+                widget.onPanEnd!();
+                _syncKnuckle();
+              },
+        onPanCancel: widget.onPanEnd == null
+            ? null
+            : () {
+                widget.onPanEnd!();
+                _syncKnuckle();
+              },
         child: Stack(
           alignment: Alignment.center,
           children: [
             Container(
-              width: outerSize,
-              height: outerSize,
+              width: widget.outerSize,
+              height: widget.outerSize,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withValues(alpha: 0.06),
@@ -1750,10 +1804,10 @@ class _MoveJoystickControl extends StatelessWidget {
               ),
             ),
             Transform.translate(
-              offset: knuckle,
+              offset: _knuckle,
               child: Container(
-                width: innerSize,
-                height: innerSize,
+                width: widget.innerSize,
+                height: widget.innerSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: const Color(0xFF8B1A1A).withValues(alpha: 0.85),
@@ -1778,45 +1832,76 @@ class _MoveJoystickControl extends StatelessWidget {
 }
 
 /// Red crosshair aim pad (matches How-to-Play diagram; no gray AIM disc).
-class _AimCrosshairControl extends StatelessWidget {
+/// Local [setState] only — does not rebuild the whole gameplay HUD.
+class _AimCrosshairControl extends StatefulWidget {
   const _AimCrosshairControl({
     required this.size,
-    this.knuckle = Offset.zero,
+    required this.maxKnuckle,
+    required this.readKnuckle,
     this.onPanStart,
     this.onPanUpdate,
     this.onPanEnd,
   });
 
   final double size;
-  final Offset knuckle;
+  final double maxKnuckle;
+  final Offset Function() readKnuckle;
   final void Function(Offset localDeltaFromCenter)? onPanStart;
   final void Function(Offset localDeltaFromCenter)? onPanUpdate;
   final VoidCallback? onPanEnd;
 
-  Offset _delta(Offset local) => local - Offset(size / 2, size / 2);
+  @override
+  State<_AimCrosshairControl> createState() => _AimCrosshairControlState();
+}
+
+class _AimCrosshairControlState extends State<_AimCrosshairControl> {
+  Offset _knuckle = Offset.zero;
+
+  Offset _delta(Offset local) =>
+      local - Offset(widget.size / 2, widget.size / 2);
+
+  void _syncKnuckle() {
+    final next = widget.readKnuckle();
+    if (next != _knuckle) setState(() => _knuckle = next);
+  }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size,
-      height: size,
+      width: widget.size,
+      height: widget.size,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onPanStart: onPanStart == null
+        onPanStart: widget.onPanStart == null
             ? null
-            : (details) => onPanStart!(_delta(details.localPosition)),
-        onPanUpdate: onPanUpdate == null
+            : (details) {
+                widget.onPanStart!(_delta(details.localPosition));
+                _syncKnuckle();
+              },
+        onPanUpdate: widget.onPanUpdate == null
             ? null
-            : (details) => onPanUpdate!(_delta(details.localPosition)),
-        onPanEnd: onPanEnd == null ? null : (_) => onPanEnd!(),
-        onPanCancel: onPanEnd,
+            : (details) {
+                widget.onPanUpdate!(_delta(details.localPosition));
+                _syncKnuckle();
+              },
+        onPanEnd: widget.onPanEnd == null
+            ? null
+            : (_) {
+                widget.onPanEnd!();
+                _syncKnuckle();
+              },
+        onPanCancel: widget.onPanEnd == null
+            ? null
+            : () {
+                widget.onPanEnd!();
+                _syncKnuckle();
+              },
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Soft hit-area ring (very subtle).
             Container(
-              width: size,
-              height: size,
+              width: widget.size,
+              height: widget.size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.black.withValues(alpha: 0.18),
@@ -1827,10 +1912,10 @@ class _AimCrosshairControl extends StatelessWidget {
               ),
             ),
             Transform.translate(
-              offset: knuckle,
+              offset: _knuckle,
               child: SizedBox(
-                width: size * 0.72,
-                height: size * 0.72,
+                width: widget.size * 0.72,
+                height: widget.size * 0.72,
                 child: const CustomPaint(painter: _AimCrosshairPainter()),
               ),
             ),

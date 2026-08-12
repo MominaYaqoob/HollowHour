@@ -86,9 +86,9 @@ class GameLoop {
       magnet.update(clamped);
       collision.update(clamped, onPlayerDamaged: onPlayerDamaged);
       state.tick(clamped);
-    } else {
-      state.markDirty();
     }
+    // When paused / level-up / ended: do NOT markDirty every frame — that was
+    // repainting the full arena ~60fps for no gameplay change (major hitch source).
 
     if (state.awaitingLevelUp && !_wasAwaitingLevelUp) {
       _wasAwaitingLevelUp = true;

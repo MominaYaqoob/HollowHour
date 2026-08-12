@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ads/ad_manager.dart';
 import 'audio/audio_manager.dart';
@@ -13,21 +14,47 @@ import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
 import 'state/economy_state.dart';
 
+/// Bump with [pubspec] version so each new APK starts a clean save (not resume).
+const _installStamp = '1.0.0+2';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  await _ensureFreshInstallIfNeeded();
   await AudioManager.instance.init();
   // Start UI first — never block/crash launch on AdMob native init.
   runApp(const HollowHourApp());
   unawaited(_initMobileAdsSafely());
 }
 
+Future<void> _ensureFreshInstallIfNeeded() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString('app_install_stamp') != _installStamp) {
+      await prefs.clear();
+      await prefs.setString('app_install_stamp', _installStamp);
+    }
+  } catch (e, st) {
+    debugPrint('Fresh-install check failed: $e\n$st');
+  }
+}
+
 Future<void> _initMobileAdsSafely() async {
   try {
-    await MobileAds.instance
+    final status = await MobileAds.instance
         .initialize()
-        .timeout(const Duration(seconds: 8));
-    await AdManager.instance.init().timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 12));
+    debugPrint('Mobile Ads initialized: $status');
+
+    // Force test-ad behavior while using Google's official test units.
+    await MobileAds.instance.updateRequestConfiguration(
+      RequestConfiguration(
+        tagForChildDirectedTreatment: TagForChildDirectedTreatment.unspecified,
+        tagForUnderAgeOfConsent: TagForUnderAgeOfConsent.unspecified,
+      ),
+    );
+
+    await AdManager.instance.init().timeout(const Duration(seconds: 20));
   } catch (e, st) {
     debugPrint('Mobile Ads init failed: $e\n$st');
   }
