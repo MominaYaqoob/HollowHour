@@ -8,6 +8,7 @@ import 'game_mode.dart';
 class GameState extends ChangeNotifier {
   GameState({
     this.hollowDepth = 5,
+    this.enemyStatScale = 1.0,
     this.playerCharacterId = 'wanderer',
     this.gameMode = GameMode.standard,
     Duration? matchDuration,
@@ -31,6 +32,10 @@ class GameState extends ChangeNotifier {
         timeRemaining = matchDuration ?? gameMode.matchDuration;
 
   final int hollowDepth;
+
+  /// Multiplier for enemy HP/damage (1.0 = unchanged). Early stages only.
+  final double enemyStatScale;
+
   final GameMode gameMode;
   final Duration matchDuration;
 

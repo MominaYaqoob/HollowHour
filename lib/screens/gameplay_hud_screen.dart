@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -48,6 +49,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   late final AnimationController _pickupController;
   late final AnimationController _vignetteController;
   late final AnimationController _levelUpController;
+  late final AnimationController _controlsHintController;
 
   late final Animation<double> _damagedFlash;
   late final Animation<double> _pickupScale;
@@ -55,6 +57,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   late final Animation<double> _vignetteOpacity;
   late final Animation<double> _levelUpOpacity;
   late final Animation<double> _levelUpScale;
+  late final Animation<double> _controlsHintOpacity;
 
   late final GameState _gameState;
   late final GameLoop _loop;
@@ -64,6 +67,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   bool _showLevelUp = false;
   bool _showTutorial = false;
   bool _persistTutorialFlag = false;
+  bool _showControlsHint = false;
   String? _lastPickupSeen;
   bool _ending = false;
 
@@ -76,6 +80,10 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
 
   PlayerController get _player => _loop.player;
   AimFireController get _aim => _loop.aim;
+
+  /// Stable arena painter — repaints via GameState, not widget rebuilds.
+  _ArenaPainter? _arenaPainter;
+  Object? _arenaPainterKey;
 
   @override
   void initState() {
@@ -152,6 +160,25 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     _levelUpScale = Tween<double>(begin: 0.88, end: 1.0).animate(
       CurvedAnimation(parent: _levelUpController, curve: Curves.easeOutBack),
     );
+
+    // Level-1 control hints: fade in → hold ~4.5s → fade out.
+    _controlsHintController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 5500),
+    );
+    _controlsHintOpacity = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 12,
+      ),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 75),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 13,
+      ),
+    ]).animate(_controlsHintController);
   }
 
   @override
@@ -168,6 +195,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     final talentDamage = 12 + economy.talentLevel('damage') * 2.0;
     _gameState = GameState(
       hollowDepth: stageDepthForLevel(stage),
+      enemyStatScale: stageEnemyStatScale(stage),
       gameMode: GameMode.standard,
       matchDuration: stageDurationForLevel(stage),
       playerCharacterId: characterId,
@@ -199,6 +227,8 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
 
     _maybeShowFirstMatchTutorial().then((_) {
       if (mounted) _loop.start();
+      // If HowToPlay is up, hints wait for its dismiss; otherwise start now.
+      unawaited(_tryStartControlsHint());
     });
   }
 
@@ -294,6 +324,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     _pickupController.dispose();
     _vignetteController.dispose();
     _levelUpController.dispose();
+    _controlsHintController.dispose();
     super.dispose();
   }
 
@@ -314,6 +345,28 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
         _showTutorial = true;
         _persistTutorialFlag = true;
       });
+    }
+  }
+
+  /// Level-1-only fading stick hints. Skips while HowToPlay is visible so the
+  /// two never stack; after "Got it", [onDismiss] calls this again.
+  Future<void> _tryStartControlsHint() async {
+    if (!mounted) return;
+    if (widget.stageLevel != 1) return;
+    if (_showTutorial || _showControlsHint) return;
+    if (await AppFlags.hasSeenControlsHint()) return;
+    if (!mounted) return;
+
+    await AppFlags.setHasSeenControlsHint(true);
+    if (!mounted) return;
+
+    setState(() => _showControlsHint = true);
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    if (!mounted || !_showControlsHint) return;
+
+    await _controlsHintController.forward(from: 0);
+    if (mounted) {
+      setState(() => _showControlsHint = false);
     }
   }
 
@@ -466,6 +519,29 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     }
   }
 
+  _ArenaPainter _obtainArenaPainter() {
+    final key = (
+      _playerSprites,
+      _enemySprites,
+      _envSprites,
+      _xpOrbSprite,
+      _magnetSprite,
+    );
+    if (_arenaPainter == null || _arenaPainterKey != key) {
+      _arenaPainterKey = key;
+      _arenaPainter = _ArenaPainter(
+        state: _gameState,
+        aim: _aim,
+        playerSprites: _playerSprites,
+        enemySprites: _enemySprites,
+        envSprites: _envSprites,
+        xpOrbSprite: _xpOrbSprite,
+        magnetSprite: _magnetSprite,
+      );
+    }
+    return _arenaPainter!;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_sessionReady) {
@@ -479,209 +555,241 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
       value: _gameState,
       child: Scaffold(
         backgroundColor: _charcoal,
-        body: ListenableBuilder(
-          listenable: _gameState,
-          builder: (context, _) {
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                const FieldBackdrop(showField: true, fogOpacity: 0.14),
-                // Soft ambient vignette (always on, subtle).
-                IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        center: Alignment.center,
-                        radius: 1.1,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.45),
-                          Colors.black.withValues(alpha: 0.75),
-                        ],
-                        stops: const [0.45, 0.8, 1.0],
-                      ),
-                    ),
+        // Stack is built once per State.setState — NOT on every GameState tick.
+        // Arena paints via CustomPainter(repaint: _gameState); HUD uses _GameSlice.
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            const FieldBackdrop(showField: true, fogOpacity: 0.14),
+            // Soft ambient vignette (always on, subtle).
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 1.1,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.45),
+                      Colors.black.withValues(alpha: 0.75),
+                    ],
+                    stops: const [0.45, 0.8, 1.0],
                   ),
                 ),
+              ),
+            ),
 
-                // Playfield entities.
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final size =
-                        Size(constraints.maxWidth, constraints.maxHeight);
-                    if (size != _gameState.viewSize) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _gameState.setViewSize(size);
-                      });
-                    }
-                    return CustomPaint(
-                      painter: _ArenaPainter(
-                        state: _gameState,
-                        playerSprites: _playerSprites,
-                        enemySprites: _enemySprites,
-                        envSprites: _envSprites,
-                        xpOrbSprite: _xpOrbSprite,
-                        magnetSprite: _magnetSprite,
-                          aimRangeAlpha: _aim.rangeIndicatorAlpha,
-                          aimRangeRadius: _gameState.aimRangeRadius,
+            // Playfield only — repaints from GameState without rebuilding widgets.
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final size =
+                    Size(constraints.maxWidth, constraints.maxHeight);
+                if (size != _gameState.viewSize) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _gameState.setViewSize(size);
+                  });
+                }
+                return CustomPaint(
+                  painter: _obtainArenaPainter(),
+                  size: size,
+                );
+              },
+            ),
+
+            // HUD chrome — sticks stay outside 60fps; live readouts use slices.
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                child: Stack(
+                  children: [
+                    // Top-left HP — rebuild only when segment index changes.
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: _GameSlice<int>(
+                        listenable: _gameState,
+                        selector: (s) {
+                          if (s.playerHp <= 0) return -1;
+                          final hpRatio = s.maxHp <= 0
+                              ? 0.0
+                              : (s.playerHp / s.maxHp).clamp(0.0, 1.0);
+                          return math.max(
+                            0,
+                            (hpRatio * _hpSegments).ceil() - 1,
+                          );
+                        },
+                        builder: (context, damagedIndex) => _HpBar(
+                          segments: _hpSegments,
+                          damagedIndex: damagedIndex,
+                          flash: _damagedFlash,
+                          controller: _damagedFlashController,
+                        ),
                       ),
-                      size: size,
-                    );
-                  },
-                ),
+                    ),
 
-                // HUD chrome.
-                SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-                    child: Builder(
-                      builder: (context) {
-                        final hpRatio = _gameState.maxHp <= 0
-                            ? 0.0
-                            : (_gameState.playerHp / _gameState.maxHp)
-                                .clamp(0.0, 1.0);
-                        final damagedIndex = _gameState.playerHp <= 0
-                            ? -1
-                            : math.max(
-                                0,
-                                (hpRatio * _hpSegments).ceil() - 1,
-                              );
-
-                        return Stack(
-                          children: [
-                            // Top-left HP.
-                            Align(
-                              alignment: Alignment.topLeft,
-                              child: _HpBar(
-                                segments: _hpSegments,
-                                damagedIndex: damagedIndex,
-                                flash: _damagedFlash,
-                                controller: _damagedFlashController,
-                              ),
-                            ),
-
-                            // Top-right timer + pause.
-                            Align(
-                              alignment: Alignment.topRight,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    _gameState.timerLabel,
-                                    style: TextStyle(
-                                      fontFamily: 'monospace',
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: 2,
-                                      color:
-                                          Colors.white.withValues(alpha: 0.88),
-                                      shadows: [
-                                        Shadow(
-                                          color: _maroon.withValues(alpha: 0.5),
-                                          blurRadius: 8,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  GestureDetector(
-                                    onTap: () => _setPaused(true),
-                                    behavior: HitTestBehavior.opaque,
-                                    child: Image.asset(
-                                      AppAssets.iconPause,
-                                      width: 28,
-                                      height: 28,
-                                    ),
+                    // Top-right timer + pause (pause control is stable).
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _GameSlice<String>(
+                            listenable: _gameState,
+                            selector: (s) => s.timerLabel,
+                            builder: (context, label) => Text(
+                              label,
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 2,
+                                color: Colors.white.withValues(alpha: 0.88),
+                                shadows: [
+                                  Shadow(
+                                    color: _maroon.withValues(alpha: 0.5),
+                                    blurRadius: 8,
                                   ),
                                 ],
                               ),
                             ),
+                          ),
+                          const SizedBox(width: 12),
+                          GestureDetector(
+                            onTap: () => _setPaused(true),
+                            behavior: HitTestBehavior.opaque,
+                            child: Image.asset(
+                              AppAssets.iconPause,
+                              width: 28,
+                              height: 28,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
 
-                            // Center-top pickup notification.
-                            if (_showPickup)
-                              Align(
-                                alignment: const Alignment(0, -0.72),
-                                child: AnimatedBuilder(
-                                  animation: _pickupController,
-                                  builder: (context, child) {
-                                    return Opacity(
-                                      opacity: _pickupOpacity.value,
-                                      child: Transform.scale(
-                                        scale: _pickupScale.value,
-                                        child: child,
-                                      ),
-                                    );
-                                  },
-                                  child: _PickupToast(
-                                    text:
-                                        _gameState.lastPickupLabel ?? '+XP',
-                                  ),
-                                ),
+                    // Center-top pickup notification (driven by local setState).
+                    if (_showPickup)
+                      Align(
+                        alignment: const Alignment(0, -0.72),
+                        child: AnimatedBuilder(
+                          animation: _pickupController,
+                          builder: (context, child) {
+                            return Opacity(
+                              opacity: _pickupOpacity.value,
+                              child: Transform.scale(
+                                scale: _pickupScale.value,
+                                child: child,
                               ),
+                            );
+                          },
+                          child: _PickupToast(
+                            text: _gameState.lastPickupLabel ?? '+XP',
+                          ),
+                        ),
+                      ),
 
-                            // Magnet active indicator (pickup-toast style).
-                            if (_gameState.magnetActive)
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Padding(
-                                  padding: const EdgeInsets.only(left: 4),
-                                  child: _PickupToast(
-                                    text:
-                                        'MAGNET ${_gameState.magnetTimeLeft.ceil()}s',
-                                    leading: Image.asset(
-                                      AppAssets.gameMagnet,
-                                      width: 18,
-                                      height: 18,
-                                      filterQuality: FilterQuality.none,
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            // Bottom-left move joystick (help-diagram style).
-                            Align(
-                              alignment: Alignment.bottomLeft,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.only(left: 8, bottom: 8),
-                                child: _MoveJoystickControl(
-                                  outerSize: 96,
-                                  innerSize: 42,
-                                  knuckle: _player.knuckleOffset((96 - 42) / 2),
-                                  onPanStart: (delta) {
-                                    _player.setStickFromLocalDelta(delta, 48);
-                                    setState(() {});
-                                  },
-                                  onPanUpdate: (delta) {
-                                    _player.setStickFromLocalDelta(delta, 48);
-                                    setState(() {});
-                                  },
-                                  onPanEnd: () {
-                                    _player.clearStick();
-                                    setState(() {});
-                                  },
-                                ),
+                    // Magnet active indicator — only when active / second ticks.
+                    _GameSlice<(bool, int)>(
+                      listenable: _gameState,
+                      selector: (s) =>
+                          (s.magnetActive, s.magnetTimeLeft.ceil()),
+                      builder: (context, slice) {
+                        if (!slice.$1) return const SizedBox.shrink();
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: _PickupToast(
+                              text: 'MAGNET ${slice.$2}s',
+                              leading: Image.asset(
+                                AppAssets.gameMagnet,
+                                width: 18,
+                                height: 18,
+                                filterQuality: FilterQuality.none,
                               ),
                             ),
+                          ),
+                        );
+                      },
+                    ),
 
-                            // Bottom-right shoot/aim + ammo readout.
-                            Align(
-                              alignment: Alignment.bottomRight,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.only(right: 8, bottom: 8),
-                                child: Column(
+                    // Bottom-left move joystick — not under GameState ticks.
+                    Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8, bottom: 8),
+                        child: _MoveJoystickControl(
+                          outerSize: 96,
+                          innerSize: 42,
+                          knuckle: _player.knuckleOffset((96 - 42) / 2),
+                          onPanStart: (delta) {
+                            _player.setStickFromLocalDelta(delta, 48);
+                            setState(() {});
+                          },
+                          onPanUpdate: (delta) {
+                            _player.setStickFromLocalDelta(delta, 48);
+                            setState(() {});
+                          },
+                          onPanEnd: () {
+                            _player.clearStick();
+                            setState(() {});
+                          },
+                        ),
+                      ),
+                    ),
+
+                    // Level-1 move hint (IgnorePointer — never blocks the stick).
+                    if (_showControlsHint)
+                      Align(
+                        alignment: Alignment.bottomLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 4, bottom: 112),
+                          child: IgnorePointer(
+                            child: AnimatedBuilder(
+                              animation: _controlsHintController,
+                              builder: (context, child) => Opacity(
+                                opacity: _controlsHintOpacity.value,
+                                child: child,
+                              ),
+                              child: const _ControlsHintChip(
+                                label: 'Drag to Move',
+                                arrowDown: true,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // Bottom-right ammo (sliced) + AIM pad (stable gestures).
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8, bottom: 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            _GameSlice<(int, int, bool)>(
+                              listenable: _gameState,
+                              selector: (s) => (
+                                s.currentAmmo,
+                                s.maxAmmo,
+                                s.isReloading,
+                              ),
+                              builder: (context, ammo) {
+                                final current = ammo.$1;
+                                final max = ammo.$2;
+                                final reloading = ammo.$3;
+                                return Column(
                                   mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     Text(
-                                      '${_gameState.currentAmmo.toString().padLeft(3, '0')}/${_gameState.maxAmmo.toString().padLeft(3, '0')}',
+                                      '${current.toString().padLeft(3, '0')}/${max.toString().padLeft(3, '0')}',
                                       style: TextStyle(
                                         fontFamily: 'monospace',
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
                                         letterSpacing: 1,
-                                        color: _gameState.isReloading
+                                        color: reloading
                                             ? Colors.white
                                                 .withValues(alpha: 0.45)
                                             : Colors.white
@@ -696,7 +804,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                                         ],
                                       ),
                                     ),
-                                    if (_gameState.isReloading)
+                                    if (reloading)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 2),
                                         child: Text(
@@ -710,111 +818,251 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                                           ),
                                         ),
                                       ),
-                                    const SizedBox(height: 6),
-                                    _AimCrosshairControl(
-                                      size: 96,
-                                      knuckle: _aim.knuckleOffset(22),
-                                      onPanStart: (delta) {
-                                        _aim.onPanStart(delta, 48);
-                                        setState(() {});
-                                      },
-                                      onPanUpdate: (delta) {
-                                        _aim.onPanUpdate(delta, 48);
-                                        setState(() {});
-                                      },
-                                      onPanEnd: () {
-                                        _aim.onPanEnd();
-                                        setState(() {});
-                                      },
-                                    ),
                                   ],
-                                ),
-                              ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 6),
+                            _AimCrosshairControl(
+                              size: 96,
+                              knuckle: _aim.knuckleOffset(22),
+                              onPanStart: (delta) {
+                                _aim.onPanStart(delta, 48);
+                                setState(() {});
+                              },
+                              onPanUpdate: (delta) {
+                                _aim.onPanUpdate(delta, 48);
+                                setState(() {});
+                              },
+                              onPanEnd: () {
+                                _aim.onPanEnd();
+                                setState(() {});
+                              },
                             ),
                           ],
-                        );
-                      },
+                        ),
+                      ),
                     ),
-                  ),
-                ),
 
-                // Damage flash vignette.
-                AnimatedBuilder(
-                  animation: _vignetteController,
-                  builder: (context, _) {
-                    if (_vignetteController.isDismissed) {
-                      return const SizedBox.shrink();
-                    }
-                    return IgnorePointer(
-                      child: Opacity(
-                        opacity: _vignetteOpacity.value,
-                        child: const DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: RadialGradient(
-                              center: Alignment.center,
-                              radius: 0.95,
-                              colors: [
-                                Colors.transparent,
-                                Color(0x88C41E1E),
-                                Color(0xEEC41E1E),
-                              ],
-                              stops: [0.25, 0.65, 1.0],
+                    // Level-1 AIM hint (IgnorePointer — never blocks the pad).
+                    if (_showControlsHint)
+                      Align(
+                        alignment: Alignment.bottomRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 4, bottom: 112),
+                          child: IgnorePointer(
+                            child: AnimatedBuilder(
+                              animation: _controlsHintController,
+                              builder: (context, child) => Opacity(
+                                opacity: _controlsHintOpacity.value,
+                                child: child,
+                              ),
+                              child: const _ControlsHintChip(
+                                label: 'Drag to Aim & Fire',
+                                arrowDown: true,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    );
-                  },
+                  ],
                 ),
+              ),
+            ),
 
-                // Level-up overlay.
-                if (_showLevelUp)
-                  AnimatedBuilder(
-                    animation: _levelUpController,
-                    builder: (context, child) {
-                      return Opacity(
-                        opacity: _levelUpOpacity.value,
-                        child: Transform.scale(
-                          scale: _levelUpScale.value,
-                          child: child,
+            // Damage flash vignette.
+            AnimatedBuilder(
+              animation: _vignetteController,
+              builder: (context, _) {
+                if (_vignetteController.isDismissed) {
+                  return const SizedBox.shrink();
+                }
+                return IgnorePointer(
+                  child: Opacity(
+                    opacity: _vignetteOpacity.value,
+                    child: const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: Alignment.center,
+                          radius: 0.95,
+                          colors: [
+                            Colors.transparent,
+                            Color(0x88C41E1E),
+                            Color(0xEEC41E1E),
+                          ],
+                          stops: [0.25, 0.65, 1.0],
                         ),
-                      );
-                    },
-                    child: _LevelUpOverlay(
-                      onSelect: _chooseUpgrade,
-                      onDismiss: _skipLevelUp,
+                      ),
                     ),
                   ),
+                );
+              },
+            ),
 
-                // Pause overlay (sits above HUD; fades via own controller).
-                PauseOverlay(
-                  visible: _gameState.isPaused &&
-                      !_gameState.awaitingLevelUp &&
-                      !_showTutorial,
-                  onResume: () => _setPaused(false),
-                  onRestart: _restartRun,
-                  onQuitToMenu: _quitToMenu,
+            // Level-up overlay.
+            if (_showLevelUp)
+              AnimatedBuilder(
+                animation: _levelUpController,
+                builder: (context, child) {
+                  return Opacity(
+                    opacity: _levelUpOpacity.value,
+                    child: Transform.scale(
+                      scale: _levelUpScale.value,
+                      child: child,
+                    ),
+                  );
+                },
+                child: _LevelUpOverlay(
+                  onSelect: _chooseUpgrade,
+                  onDismiss: _skipLevelUp,
                 ),
+              ),
 
-                // First-match tutorial (or can be opened from Main Menu).
-                HowToPlayOverlay(
-                  visible: _showTutorial,
-                  persistTutorialFlag: _persistTutorialFlag,
-                  onDismiss: () {
-                    setState(() {
-                      _showTutorial = false;
-                      _persistTutorialFlag = false;
-                    });
-                    _gameState.setPaused(false);
-                  },
-                ),
-              ],
-            );
-          },
+            // Pause overlay — rebuild only when pause / level-up flags change.
+            _GameSlice<(bool, bool)>(
+              listenable: _gameState,
+              selector: (s) => (s.isPaused, s.awaitingLevelUp),
+              builder: (context, flags) => PauseOverlay(
+                visible: flags.$1 && !flags.$2 && !_showTutorial,
+                onResume: () => _setPaused(false),
+                onRestart: _restartRun,
+                onQuitToMenu: _quitToMenu,
+              ),
+            ),
+
+            // First-match tutorial (local setState visibility).
+            HowToPlayOverlay(
+              visible: _showTutorial,
+              persistTutorialFlag: _persistTutorialFlag,
+              onDismiss: () {
+                setState(() {
+                  _showTutorial = false;
+                  _persistTutorialFlag = false;
+                });
+                _gameState.setPaused(false);
+                // After full tutorial, show light Level-1 stick hints if needed.
+                unawaited(_tryStartControlsHint());
+              },
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+/// Soft Level-1 control callout — light backing, maroon glow text, chevron.
+class _ControlsHintChip extends StatelessWidget {
+  const _ControlsHintChip({
+    required this.label,
+    required this.arrowDown,
+  });
+
+  final String label;
+  final bool arrowDown;
+
+  static const Color _maroonGlow = Color(0xFFC41E1E);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.12),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'serif',
+              fontSize: 12,
+              letterSpacing: 0.8,
+              color: Colors.white.withValues(alpha: 0.88),
+              shadows: [
+                Shadow(
+                  color: _maroonGlow.withValues(alpha: 0.55),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (arrowDown) ...[
+          const SizedBox(height: 2),
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 22,
+            color: Colors.white.withValues(alpha: 0.7),
+            shadows: [
+              Shadow(
+                color: _maroonGlow.withValues(alpha: 0.45),
+                blurRadius: 6,
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Listens to [GameState] but only [setState]s when [selector] output changes.
+class _GameSlice<T> extends StatefulWidget {
+  const _GameSlice({
+    required this.listenable,
+    required this.selector,
+    required this.builder,
+  });
+
+  final GameState listenable;
+  final T Function(GameState state) selector;
+  final Widget Function(BuildContext context, T value) builder;
+
+  @override
+  State<_GameSlice<T>> createState() => _GameSliceState<T>();
+}
+
+class _GameSliceState<T> extends State<_GameSlice<T>> {
+  late T _value;
+
+  @override
+  void initState() {
+    super.initState();
+    _value = widget.selector(widget.listenable);
+    widget.listenable.addListener(_onNotify);
+  }
+
+  @override
+  void didUpdateWidget(covariant _GameSlice<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.listenable != widget.listenable) {
+      oldWidget.listenable.removeListener(_onNotify);
+      widget.listenable.addListener(_onNotify);
+      _value = widget.selector(widget.listenable);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.listenable.removeListener(_onNotify);
+    super.dispose();
+  }
+
+  void _onNotify() {
+    final next = widget.selector(widget.listenable);
+    if (next != _value) {
+      setState(() => _value = next);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _value);
 }
 
 Future<ui.Image> _loadUiImage(String asset) async {
@@ -915,23 +1163,21 @@ class _EnemySpriteAtlas {
 class _ArenaPainter extends CustomPainter {
   _ArenaPainter({
     required this.state,
+    required this.aim,
     required this.playerSprites,
     required this.enemySprites,
     required this.envSprites,
     required this.xpOrbSprite,
     required this.magnetSprite,
-    required this.aimRangeAlpha,
-    required this.aimRangeRadius,
-  });
+  }) : super(repaint: state);
 
   final GameState state;
+  final AimFireController aim;
   final _PlayerSpriteSet? playerSprites;
   final _EnemySpriteAtlas? enemySprites;
   final Map<String, ui.Image>? envSprites;
   final ui.Image? xpOrbSprite;
   final ui.Image? magnetSprite;
-  final double aimRangeAlpha;
-  final double aimRangeRadius;
 
   /// On-screen size for a walk-sheet frame (64px source). Idle sheets are
   /// often 32px and must scale with source pixels so idle ≠ 2× walk.
@@ -1076,20 +1322,21 @@ class _ArenaPainter extends CustomPainter {
   }
 
   void _paintAimRange(Canvas canvas) {
-    if (aimRangeAlpha <= 0.01) return;
+    if (aim.rangeIndicatorAlpha <= 0.01) return;
     // Range fill/ring removed — only the dotted trajectory aids aim.
     _paintAimTrajectory(canvas);
   }
 
   /// Visual-only dotted aim line (hit detection unchanged).
   void _paintAimTrajectory(Canvas canvas) {
+    final aimRangeAlpha = aim.rangeIndicatorAlpha;
     if (aimRangeAlpha <= 0.01) return;
     final origin = state.playerPosition;
     final dir = Offset(
       math.cos(state.facingAngle),
       math.sin(state.facingAngle),
     );
-    final end = origin + dir * aimRangeRadius;
+    final end = origin + dir * state.aimRangeRadius;
     final paint = Paint()
       ..color = _maroonGlow.withValues(alpha: (0.55 * aimRangeAlpha).clamp(0.0, 0.7))
       ..strokeWidth = 2.0
@@ -1287,7 +1534,17 @@ class _ArenaPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _ArenaPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _ArenaPainter oldDelegate) {
+    // Frame motion is driven by super(repaint: state). Rebuild painter only when
+    // sprite atlases change (async load) or aim controller identity changes.
+    return oldDelegate.state != state ||
+        oldDelegate.aim != aim ||
+        oldDelegate.playerSprites != playerSprites ||
+        oldDelegate.enemySprites != enemySprites ||
+        oldDelegate.envSprites != envSprites ||
+        oldDelegate.xpOrbSprite != xpOrbSprite ||
+        oldDelegate.magnetSprite != magnetSprite;
+  }
 }
 
 class _HpBar extends StatelessWidget {

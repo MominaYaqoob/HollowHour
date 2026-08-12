@@ -6,6 +6,7 @@ class AppFlags {
 
   static const hasSeenOnboardingKey = 'hasSeenOnboarding';
   static const hasSeenTutorialKey = 'hasSeenTutorial';
+  static const hasSeenControlsHintKey = 'hasSeenControlsHint';
 
   static Future<bool> hasSeenOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
@@ -25,5 +26,15 @@ class AppFlags {
   static Future<void> setHasSeenTutorial(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(hasSeenTutorialKey, value);
+  }
+
+  static Future<bool> hasSeenControlsHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(hasSeenControlsHintKey) ?? false;
+  }
+
+  static Future<void> setHasSeenControlsHint(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(hasSeenControlsHintKey, value);
   }
 }

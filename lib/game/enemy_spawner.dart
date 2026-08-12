@@ -74,7 +74,24 @@ class EnemySpawner {
     final kind = _pickKind();
     final useNear = nearCamera || _shouldSpawnNearCamera();
     final pos = useNear ? _cameraEdgePoint() : _edgePoint(size);
-    state.enemies.add(EnemyBehavior.spawn(type: kind, position: pos));
+    final base = EnemyBehavior.spawn(type: kind, position: pos);
+    final scale = state.enemyStatScale;
+    // Scale HP/damage only — speed stays on the existing time-based ramp.
+    if (scale == 1.0) {
+      state.enemies.add(base);
+      return;
+    }
+    state.enemies.add(
+      EnemyEntity(
+        position: base.position,
+        hp: base.hp * scale,
+        maxHp: base.maxHp * scale,
+        speed: base.speed,
+        damage: base.damage * scale,
+        radius: base.radius,
+        type: base.type,
+      ),
+    );
   }
 
   /// Early / easy stages: spawn just off the visible frame so they enter fast.

@@ -28,6 +28,7 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   audioplayers: ^6.8.1
+  connectivity_plus: ^7.3.1
   flutter:
     sdk: flutter
   google_mobile_ads: ^9.0.0

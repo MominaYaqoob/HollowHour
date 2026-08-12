@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import 'ads/ad_manager.dart';
 import 'audio/audio_manager.dart';
+import 'connectivity/connectivity_gate.dart';
 import 'prefs/app_flags.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
@@ -44,6 +45,9 @@ class HollowHourApp extends StatelessWidget {
             seedColor: const Color(0xFF8B1A1A),
             brightness: Brightness.dark,
           ),
+        ),
+        builder: (context, child) => ConnectivityGate(
+          child: child ?? const SizedBox.shrink(),
         ),
         home: const _RootGate(),
       ),

@@ -28,6 +28,15 @@ int stageDepthForLevel(int level) {
   return (1 + (14 * (n - 1) / 29)).round().clamp(1, 15);
 }
 
+/// Enemy HP/damage multiplier for early stages only.
+/// Level 3+ returns 1.0 so difficulty matches pre-scaling behavior.
+double stageEnemyStatScale(int level) {
+  final n = level.clamp(1, 30);
+  if (n <= 1) return 0.6;
+  if (n == 2) return 0.75;
+  return 1.0;
+}
+
 String stageDurationLabel(int level) {
   final d = stageDurationForLevel(level);
   final m = d.inMinutes;
