@@ -522,3 +522,10 @@ Fiction / entertainment demo.
 - Third-party audio: Mixkit Free License — `assets/audio/CREDITS.md`
 - Pixel art: `assets/game/CREDITS.md`
 - Ads: Google Mobile Ads SDK with **official Google test units** during development
+
+---
+
+## Ads used
+
+- Interstitial
+- Rewarded

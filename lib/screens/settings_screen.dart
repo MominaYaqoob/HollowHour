@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../audio/audio_manager.dart';
 import '../theme/app_assets.dart';
 import '../theme/themed_chrome.dart';
-import 'privacy_policy_screen.dart';
 
 /// Settings — audio/haptics toggles wired to [AudioManager] (persisted).
 class SettingsScreen extends StatefulWidget {
@@ -92,18 +92,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _openPrivacyPolicy() {
+  Future<void> _openPrivacyPolicy() async {
     AudioManager.instance.playTap();
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const PrivacyPolicyScreen(),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 350),
-      ),
+    final uri = Uri.parse(
+      'https://learnwithfunpuzzlegame.blogspot.com/2026/08/hollow-hour.html',
     );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   @override

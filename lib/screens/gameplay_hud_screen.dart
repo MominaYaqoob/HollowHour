@@ -20,6 +20,7 @@ import '../prefs/app_flags.dart';
 import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
 import '../theme/field_backdrop.dart';
+import '../theme/maroon_loader.dart';
 import 'game_over_screen.dart';
 import 'how_to_play_overlay.dart';
 import 'pause_overlay.dart';
@@ -71,6 +72,10 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   bool _showControlsHint = false;
   String? _lastPickupSeen;
   bool _ending = false;
+  bool _enteringLevel = true;
+  bool _waitingOnAd = false;
+  bool _showEndBanner = false;
+  bool _endBannerWon = false;
 
   /// Loaded top-down sheets for the equipped character (idle/walk × facing).
   _PlayerSpriteSet? _playerSprites;
@@ -226,11 +231,20 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     _loadEnvSprites();
     _loadPickupSprites();
 
-    _maybeShowFirstMatchTutorial().then((_) {
-      if (mounted) _loop.start();
-      // If HowToPlay is up, hints wait for its dismiss; otherwise start now.
-      unawaited(_tryStartControlsHint());
-    });
+    unawaited(_gateLevelEnter());
+  }
+
+  /// Brief enter gate so the match clock does not start under the loader.
+  Future<void> _gateLevelEnter() async {
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+    setState(() => _enteringLevel = false);
+    unawaited(AudioManager.instance.ensureMusicPlaying());
+    await _maybeShowFirstMatchTutorial();
+    if (!mounted) return;
+    _loop.start();
+    // If HowToPlay is up, hints wait for its dismiss; otherwise start now.
+    unawaited(_tryStartControlsHint());
   }
 
   Future<void> _loadPlayerSprites(String characterId) async {
@@ -502,11 +516,48 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
       economy.updateCharacterLevel(_gameState.playerCharacterId, stage);
     }
 
-    // Level end — full-screen TEST interstitial (skip if unload / fail).
+    // 1) Result popup first — then ad (avoids sudden black/ad flash).
+    if (mounted) {
+      setState(() {
+        _endBannerWon = won;
+        _showEndBanner = true;
+        _waitingOnAd = false;
+      });
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1700));
+    if (!mounted) return;
+    setState(() => _showEndBanner = false);
+
+    // Let Flutter paint a clean frame before AdMob takes the Activity —
+    // otherwise level-end interstitial often opens blank with only the X.
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     try {
-      await AdManager.instance.showInterstitial();
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    } catch (_) {}
+
+    // 2) Short loader only while waiting for a load; clear before / on show.
+    final needsWait = !AdManager.instance.isInterstitialReady;
+    if (needsWait && mounted) {
+      setState(() => _waitingOnAd = true);
+    }
+    try {
+      await AdManager.instance.showInterstitial(
+        onPresented: () {
+          if (mounted && _waitingOnAd) {
+            setState(() => _waitingOnAd = false);
+          }
+        },
+      );
     } catch (_) {}
     if (!mounted) return;
+    if (_waitingOnAd) setState(() => _waitingOnAd = false);
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } catch (_) {}
+
 
     final screen = won
         ? WinScreen(
@@ -569,10 +620,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   @override
   Widget build(BuildContext context) {
     if (!_sessionReady) {
-      return const Scaffold(
-        backgroundColor: _charcoal,
-        body: SizedBox.expand(),
-      );
+      return const MaroonLoaderScaffold();
     }
 
     return ChangeNotifierProvider<GameState>.value(
@@ -965,7 +1013,93 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                 unawaited(_tryStartControlsHint());
               },
             ),
+
+            if (_enteringLevel)
+              const MaroonLoaderOverlay(message: 'Entering the Hollow…'),
+            if (_showEndBanner)
+              _LevelEndBanner(won: _endBannerWon),
+            if (_waitingOnAd)
+              const MaroonLoaderOverlay(
+                message: 'Loading…',
+                opaque: false,
+              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Brief Cleared / Fail popup before the end-of-level ad.
+class _LevelEndBanner extends StatelessWidget {
+  const _LevelEndBanner({required this.won});
+
+  final bool won;
+
+  static const Color _maroon = Color(0xFF8B1A1A);
+  static const Color _maroonGlow = Color(0xFFC41E1E);
+
+  @override
+  Widget build(BuildContext context) {
+    final title = won ? 'Level Cleared' : 'Failed';
+    final subtitle = won
+        ? 'You survived the Hollow.'
+        : 'The Hollow claims you.';
+
+    return AbsorbPointer(
+      child: ColoredBox(
+        color: const Color(0xFF0A0A0A).withValues(alpha: 0.78),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 36),
+            padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
+            decoration: BoxDecoration(
+              color: const Color(0xFF121010),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: (won ? _maroonGlow : _maroon).withValues(alpha: 0.65),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: (won ? _maroonGlow : _maroon).withValues(alpha: 0.28),
+                  blurRadius: 22,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 28,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.4,
+                    color: Colors.white.withValues(alpha: 0.94),
+                    shadows: [
+                      Shadow(
+                        color: _maroonGlow.withValues(alpha: 0.5),
+                        blurRadius: 16,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 13,
+                    height: 1.35,
+                    color: Colors.white.withValues(alpha: 0.58),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

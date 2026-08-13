@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import '../audio/audio_manager.dart';
+
 /// Google AdMob helper — TEST ad units only (no production IDs).
 ///
 /// All public methods are fail-soft: load/show failures never throw to callers.
@@ -18,8 +20,9 @@ class AdManager {
   static const String testRewardedAdUnitId =
       'ca-app-pub-3940256099942544/5224354917';
 
-  static const Duration _showTimeout = Duration(seconds: 60);
-  static const Duration _loadWait = Duration(seconds: 12);
+  /// Failsafe so a broken full-screen ad never leaves a black screen forever.
+  static const Duration _showTimeout = Duration(seconds: 12);
+  static const Duration _loadWait = Duration(seconds: 8);
 
   InterstitialAd? _interstitialAd;
   RewardedAd? _rewardedAd;
@@ -28,6 +31,8 @@ class AdManager {
   bool _initialized = false;
   Completer<void>? _interstitialLoadGate;
   Completer<void>? _rewardedLoadGate;
+  bool _interstitialShowing = false;
+  bool _rewardedShowing = false;
 
   bool get isRewardedReady => _rewardedAd != null;
   bool get isInterstitialReady => _interstitialAd != null;
@@ -53,7 +58,7 @@ class AdManager {
   }
 
   Future<void> preloadInterstitial() async {
-    if (_interstitialAd != null) return;
+    if (_interstitialAd != null || _interstitialShowing) return;
     if (_interstitialLoading) {
       await _interstitialLoadGate?.future;
       return;
@@ -91,6 +96,7 @@ class AdManager {
         onTimeout: () {
           debugPrint('Interstitial load timed out waiting for callback');
           _interstitialLoading = false;
+          if (!gate.isCompleted) gate.complete();
         },
       );
     } catch (e, st) {
@@ -102,7 +108,7 @@ class AdManager {
   }
 
   Future<void> preloadRewarded() async {
-    if (_rewardedAd != null) return;
+    if (_rewardedAd != null || _rewardedShowing) return;
     if (_rewardedLoading) {
       await _rewardedLoadGate?.future;
       return;
@@ -139,6 +145,7 @@ class AdManager {
         onTimeout: () {
           debugPrint('Rewarded load timed out waiting for callback');
           _rewardedLoading = false;
+          if (!gate.isCompleted) gate.complete();
         },
       );
     } catch (e, st) {
@@ -158,13 +165,32 @@ class AdManager {
   }
 
   /// Shows a test interstitial if ready; waits briefly for a load first.
-  Future<void> showInterstitial() async {
+  ///
+  /// [onPresented] fires when the full-screen ad is actually visible (or when
+  /// the attempt is skipped/failed) so UI can clear loading overlays.
+  Future<void> showInterstitial({VoidCallback? onPresented}) async {
+    if (_interstitialShowing) {
+      onPresented?.call();
+      return;
+    }
+
     final completer = Completer<void>();
     var finished = false;
+    var presentedNotified = false;
+    var didShow = false;
+
+    void notifyPresented() {
+      if (presentedNotified) return;
+      presentedNotified = true;
+      onPresented?.call();
+    }
 
     void finish() {
       if (finished) return;
       finished = true;
+      _interstitialShowing = false;
+      notifyPresented();
+      unawaited(AudioManager.instance.ensureMusicPlaying());
       if (!completer.isCompleted) completer.complete();
     }
 
@@ -183,11 +209,15 @@ class AdManager {
       }
 
       _interstitialAd = null;
+      _interstitialShowing = true;
       ad.fullScreenContentCallback = FullScreenContentCallback(
         onAdShowedFullScreenContent: (ad) {
           debugPrint('Interstitial showed');
+          didShow = true;
+          notifyPresented();
         },
         onAdDismissedFullScreenContent: (ad) {
+          debugPrint('Interstitial dismissed');
           _safeDispose(ad);
           unawaited(preloadInterstitial());
           finish();
@@ -206,19 +236,47 @@ class AdManager {
       finish();
     }
 
-    unawaited(Future<void>.delayed(_showTimeout, finish));
+    // If it never appeared, skip quickly. Once shown, wait for real dismiss
+    // (forced finish under a live ad caused blank/X-only chrome at level end).
+    unawaited(Future<void>.delayed(_showTimeout, () {
+      if (!finished && !didShow) {
+        debugPrint('Interstitial never showed — skipping');
+        finish();
+      }
+    }));
+    unawaited(Future<void>.delayed(const Duration(seconds: 90), () {
+      if (!finished) {
+        debugPrint('Interstitial dismiss failsafe — forcing close');
+        finish();
+      }
+    }));
     return completer.future;
   }
 
   /// Shows a test rewarded ad. Returns `true` only if the user earned the reward.
-  Future<bool> showRewarded() async {
+  Future<bool> showRewarded({VoidCallback? onPresented}) async {
+    if (_rewardedShowing) {
+      onPresented?.call();
+      return false;
+    }
+
     final completer = Completer<bool>();
     var finished = false;
     var earned = false;
+    var presentedNotified = false;
+
+    void notifyPresented() {
+      if (presentedNotified) return;
+      presentedNotified = true;
+      onPresented?.call();
+    }
 
     void finish(bool result) {
       if (finished) return;
       finished = true;
+      _rewardedShowing = false;
+      notifyPresented();
+      unawaited(AudioManager.instance.ensureMusicPlaying());
       if (!completer.isCompleted) completer.complete(result);
     }
 
@@ -237,12 +295,15 @@ class AdManager {
       }
 
       _rewardedAd = null;
+      _rewardedShowing = true;
 
       ad.fullScreenContentCallback = FullScreenContentCallback(
         onAdShowedFullScreenContent: (ad) {
           debugPrint('Rewarded showed');
+          notifyPresented();
         },
         onAdDismissedFullScreenContent: (ad) {
+          debugPrint('Rewarded dismissed');
           _safeDispose(ad);
           unawaited(preloadRewarded());
           finish(earned);
@@ -266,7 +327,12 @@ class AdManager {
       finish(false);
     }
 
-    unawaited(Future<void>.delayed(_showTimeout, () => finish(earned)));
+    unawaited(Future<void>.delayed(_showTimeout, () {
+      if (!finished) {
+        debugPrint('Rewarded show timed out — forcing close');
+      }
+      finish(earned);
+    }));
     return completer.future;
   }
 }

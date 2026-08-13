@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../ads/ad_manager.dart';
 import '../theme/field_backdrop.dart';
+import '../theme/maroon_loader.dart';
 import 'gameplay_hud_screen.dart';
 
 /// Game-over / results screen — dramatic headline, counting stats, retry CTA.
@@ -155,7 +156,11 @@ class _GameOverScreenState extends State<GameOverScreen>
     setState(() => _busy = true);
     _confirmLeaveOnce();
     try {
-      await AdManager.instance.showInterstitial();
+      await AdManager.instance.showInterstitial(
+        onPresented: () {
+          if (mounted) setState(() => _busy = false);
+        },
+      );
     } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -176,7 +181,11 @@ class _GameOverScreenState extends State<GameOverScreen>
     setState(() => _busy = true);
     _confirmLeaveOnce();
     try {
-      await AdManager.instance.showInterstitial();
+      await AdManager.instance.showInterstitial(
+        onPresented: () {
+          if (mounted) setState(() => _busy = false);
+        },
+      );
     } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -187,7 +196,11 @@ class _GameOverScreenState extends State<GameOverScreen>
     setState(() => _busy = true);
     var earned = false;
     try {
-      earned = await AdManager.instance.showRewarded();
+      earned = await AdManager.instance.showRewarded(
+        onPresented: () {
+          if (mounted) setState(() => _busy = false);
+        },
+      );
     } catch (_) {
       earned = false;
     }
@@ -337,6 +350,8 @@ class _GameOverScreenState extends State<GameOverScreen>
               ),
             ),
           ),
+          if (_busy)
+            const MaroonLoaderOverlay(message: 'Loading…'),
         ],
       ),
     );

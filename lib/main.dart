@@ -13,6 +13,7 @@ import 'prefs/app_flags.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
 import 'state/economy_state.dart';
+import 'theme/maroon_loader.dart';
 
 /// Bump with [pubspec] version so each new APK starts a clean save (not resume).
 const _installStamp = '1.0.0+2';
@@ -117,14 +118,7 @@ class _RootGateState extends State<_RootGate> {
       future: _bootstrap,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            backgroundColor: Color(0xFF0A0A0A),
-            body: Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFF8B1A1A),
-              ),
-            ),
-          );
+          return const MaroonLoaderScaffold();
         }
         final seen = snapshot.data ?? false;
         return seen ? const SplashScreen() : const OnboardingScreen();

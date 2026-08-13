@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../ads/ad_manager.dart';
 import '../state/economy_state.dart';
 import '../theme/field_backdrop.dart';
+import '../theme/maroon_loader.dart';
 import 'gameplay_hud_screen.dart';
 import 'pre_game_setup_screen.dart';
 
@@ -122,7 +123,11 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      await AdManager.instance.showInterstitial();
+      await AdManager.instance.showInterstitial(
+        onPresented: () {
+          if (mounted) setState(() => _busy = false);
+        },
+      );
     } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -155,7 +160,11 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      await AdManager.instance.showInterstitial();
+      await AdManager.instance.showInterstitial(
+        onPresented: () {
+          if (mounted) setState(() => _busy = false);
+        },
+      );
     } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -296,6 +305,8 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
+          if (_busy)
+            const MaroonLoaderOverlay(message: 'Loading…'),
         ],
       ),
     );
