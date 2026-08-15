@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../audio/audio_manager.dart';
@@ -24,6 +25,9 @@ class AdManager {
   static const Duration _showTimeout = Duration(seconds: 12);
   static const Duration _loadWait = Duration(seconds: 8);
 
+  /// Dismiss failsafe if close/dismiss never fires (close-button visibility bug).
+  static const Duration _dismissFailsafe = Duration(seconds: 25);
+
   InterstitialAd? _interstitialAd;
   RewardedAd? _rewardedAd;
   bool _interstitialLoading = false;
@@ -36,6 +40,24 @@ class AdManager {
 
   bool get isRewardedReady => _rewardedAd != null;
   bool get isInterstitialReady => _interstitialAd != null;
+
+  /// Exit immersive-sticky so AdMob's close control has system-bar space.
+  Future<void> _prepareSystemUiForAd() async {
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    } catch (e, st) {
+      debugPrint('AdManager prepare SystemUI failed: $e\n$st');
+    }
+  }
+
+  /// Restore gameplay immersive-sticky after the ad is gone / failed.
+  Future<void> _restoreSystemUiAfterAd() async {
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } catch (e, st) {
+      debugPrint('AdManager restore SystemUI failed: $e\n$st');
+    }
+  }
 
   /// Call once at app startup after [MobileAds.instance.initialize].
   Future<void> init() async {
@@ -218,20 +240,27 @@ class AdManager {
         },
         onAdDismissedFullScreenContent: (ad) {
           debugPrint('Interstitial dismissed');
+          unawaited(_restoreSystemUiAfterAd());
           _safeDispose(ad);
           unawaited(preloadInterstitial());
           finish();
         },
         onAdFailedToShowFullScreenContent: (ad, error) {
           debugPrint('Interstitial failed to show: $error');
+          unawaited(_restoreSystemUiAfterAd());
           _safeDispose(ad);
           unawaited(preloadInterstitial());
           finish();
         },
       );
+      // Leave app immersive-sticky so the ad close control can render.
+      await _prepareSystemUiForAd();
+      // Google's documented workaround: disable the ad's own immersive mode.
+      await ad.setImmersiveMode(false);
       await ad.show();
     } catch (e, st) {
       debugPrint('Interstitial show exception: $e\n$st');
+      unawaited(_restoreSystemUiAfterAd());
       unawaited(preloadInterstitial());
       finish();
     }
@@ -241,12 +270,14 @@ class AdManager {
     unawaited(Future<void>.delayed(_showTimeout, () {
       if (!finished && !didShow) {
         debugPrint('Interstitial never showed — skipping');
+        unawaited(_restoreSystemUiAfterAd());
         finish();
       }
     }));
-    unawaited(Future<void>.delayed(const Duration(seconds: 90), () {
+    unawaited(Future<void>.delayed(_dismissFailsafe, () {
       if (!finished) {
         debugPrint('Interstitial dismiss failsafe — forcing close');
+        unawaited(_restoreSystemUiAfterAd());
         finish();
       }
     }));
@@ -264,6 +295,7 @@ class AdManager {
     var finished = false;
     var earned = false;
     var presentedNotified = false;
+    var didShow = false;
 
     void notifyPresented() {
       if (presentedNotified) return;
@@ -300,22 +332,29 @@ class AdManager {
       ad.fullScreenContentCallback = FullScreenContentCallback(
         onAdShowedFullScreenContent: (ad) {
           debugPrint('Rewarded showed');
+          didShow = true;
           notifyPresented();
         },
         onAdDismissedFullScreenContent: (ad) {
           debugPrint('Rewarded dismissed');
+          unawaited(_restoreSystemUiAfterAd());
           _safeDispose(ad);
           unawaited(preloadRewarded());
           finish(earned);
         },
         onAdFailedToShowFullScreenContent: (ad, error) {
           debugPrint('Rewarded failed to show: $error');
+          unawaited(_restoreSystemUiAfterAd());
           _safeDispose(ad);
           unawaited(preloadRewarded());
           finish(false);
         },
       );
 
+      // Leave app immersive-sticky so the ad close control can render.
+      await _prepareSystemUiForAd();
+      // Google's documented workaround: disable the ad's own immersive mode.
+      await ad.setImmersiveMode(false);
       await ad.show(
         onUserEarnedReward: (ad, reward) {
           earned = true;
@@ -323,15 +362,24 @@ class AdManager {
       );
     } catch (e, st) {
       debugPrint('Rewarded show exception: $e\n$st');
+      unawaited(_restoreSystemUiAfterAd());
       unawaited(preloadRewarded());
       finish(false);
     }
 
     unawaited(Future<void>.delayed(_showTimeout, () {
-      if (!finished) {
-        debugPrint('Rewarded show timed out — forcing close');
+      if (!finished && !didShow) {
+        debugPrint('Rewarded never showed — skipping');
+        unawaited(_restoreSystemUiAfterAd());
+        finish(earned);
       }
-      finish(earned);
+    }));
+    unawaited(Future<void>.delayed(_dismissFailsafe, () {
+      if (!finished) {
+        debugPrint('Rewarded dismiss failsafe — forcing close');
+        unawaited(_restoreSystemUiAfterAd());
+        finish(earned);
+      }
     }));
     return completer.future;
   }

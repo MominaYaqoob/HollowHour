@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:in_app_review/in_app_review.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../audio/audio_manager.dart';
@@ -100,6 +101,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _rateUs() async {
+    AudioManager.instance.playTap();
+    try {
+      await InAppReview.instance.openStoreListing();
+    } catch (_) {
+      // Fail soft — Play Store may be missing on emulator / unpublished apps.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -169,6 +179,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _NavRow(
             label: 'Privacy Policy',
             onTap: _openPrivacyPolicy,
+          ),
+          _NavRow(
+            label: 'Rate Us',
+            onTap: _rateUs,
           ),
           const SizedBox(height: 28),
           _sectionLabel('Danger Zone'),

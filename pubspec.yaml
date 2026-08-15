@@ -32,6 +32,7 @@ dependencies:
   flutter:
     sdk: flutter
   google_mobile_ads: ^9.0.0
+  in_app_review: ^2.0.12
   provider: ^6.1.5+1
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.2
