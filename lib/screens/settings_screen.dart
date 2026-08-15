@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:in_app_review/in_app_review.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../audio/audio_manager.dart';
@@ -104,7 +103,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _rateUs() async {
     AudioManager.instance.playTap();
     try {
-      await InAppReview.instance.openStoreListing();
+      // Same package id as Android applicationId — opens Play Store listing.
+      const packageId = 'com.sid.hollow.hour.com';
+      final market = Uri.parse('market://details?id=$packageId');
+      if (await canLaunchUrl(market)) {
+        await launchUrl(market, mode: LaunchMode.externalApplication);
+        return;
+      }
+      final web = Uri.parse(
+        'https://play.google.com/store/apps/details?id=$packageId',
+      );
+      await launchUrl(web, mode: LaunchMode.externalApplication);
     } catch (_) {
       // Fail soft — Play Store may be missing on emulator / unpublished apps.
     }

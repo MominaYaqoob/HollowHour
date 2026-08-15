@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../ads/ad_manager.dart';
 import '../state/economy_state.dart';
 import '../theme/field_backdrop.dart';
 import '../theme/maroon_loader.dart';
@@ -122,13 +121,6 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
   Future<void> _retryLevel() async {
     if (_busy) return;
     setState(() => _busy = true);
-    try {
-      await AdManager.instance.showInterstitial(
-        onPresented: () {
-          if (mounted) setState(() => _busy = false);
-        },
-      );
-    } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
@@ -159,13 +151,6 @@ class _WinScreenState extends State<WinScreen> with TickerProviderStateMixin {
   Future<void> _mainMenu() async {
     if (_busy) return;
     setState(() => _busy = true);
-    try {
-      await AdManager.instance.showInterstitial(
-        onPresented: () {
-          if (mounted) setState(() => _busy = false);
-        },
-      );
-    } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
   }

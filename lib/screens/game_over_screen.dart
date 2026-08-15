@@ -155,13 +155,6 @@ class _GameOverScreenState extends State<GameOverScreen>
     if (_busy) return;
     setState(() => _busy = true);
     _confirmLeaveOnce();
-    try {
-      await AdManager.instance.showInterstitial(
-        onPresented: () {
-          if (mounted) setState(() => _busy = false);
-        },
-      );
-    } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
@@ -180,13 +173,6 @@ class _GameOverScreenState extends State<GameOverScreen>
     if (_busy) return;
     setState(() => _busy = true);
     _confirmLeaveOnce();
-    try {
-      await AdManager.instance.showInterstitial(
-        onPresented: () {
-          if (mounted) setState(() => _busy = false);
-        },
-      );
-    } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
   }

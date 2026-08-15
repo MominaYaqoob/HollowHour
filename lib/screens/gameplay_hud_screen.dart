@@ -234,10 +234,28 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     unawaited(_gateLevelEnter());
   }
 
-  /// Brief enter gate so the match clock does not start under the loader.
+  /// Brief enter gate so the match clock does not start under the loader / ad.
   Future<void> _gateLevelEnter() async {
     await Future<void>.delayed(const Duration(milliseconds: 700));
     if (!mounted) return;
+
+    // Level-start interstitial (once per run) — safer than level-end close bugs.
+    final needsWait = !AdManager.instance.isInterstitialReady;
+    if (needsWait && mounted) {
+      setState(() => _waitingOnAd = true);
+    }
+    try {
+      await AdManager.instance.showInterstitial(
+        onPresented: () {
+          if (mounted && _waitingOnAd) {
+            setState(() => _waitingOnAd = false);
+          }
+        },
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    if (_waitingOnAd) setState(() => _waitingOnAd = false);
+
     setState(() => _enteringLevel = false);
     unawaited(AudioManager.instance.ensureMusicPlaying());
     await _maybeShowFirstMatchTutorial();
@@ -494,7 +512,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     }
 
     _ending = true;
-    unawaited(_finishRunWithInterstitial(
+    unawaited(_finishRun(
       won: won,
       killCount: killCount,
       timeLabel: timeLabel,
@@ -503,7 +521,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     ));
   }
 
-  Future<void> _finishRunWithInterstitial({
+  Future<void> _finishRun({
     required bool won,
     required int killCount,
     required String timeLabel,
@@ -516,7 +534,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
       economy.updateCharacterLevel(_gameState.playerCharacterId, stage);
     }
 
-    // 1) Result popup first — then ad (avoids sudden black/ad flash).
+    // Result popup only — interstitial runs at level start, not here.
     if (mounted) {
       setState(() {
         _endBannerWon = won;
@@ -527,37 +545,6 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     await Future<void>.delayed(const Duration(milliseconds: 1700));
     if (!mounted) return;
     setState(() => _showEndBanner = false);
-
-    // Let Flutter paint a clean frame before AdMob takes the Activity —
-    // otherwise level-end interstitial often opens blank with only the X.
-    await Future<void>.delayed(const Duration(milliseconds: 450));
-    if (!mounted) return;
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-    try {
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    } catch (_) {}
-
-    // 2) Short loader only while waiting for a load; clear before / on show.
-    final needsWait = !AdManager.instance.isInterstitialReady;
-    if (needsWait && mounted) {
-      setState(() => _waitingOnAd = true);
-    }
-    try {
-      await AdManager.instance.showInterstitial(
-        onPresented: () {
-          if (mounted && _waitingOnAd) {
-            setState(() => _waitingOnAd = false);
-          }
-        },
-      );
-    } catch (_) {}
-    if (!mounted) return;
-    if (_waitingOnAd) setState(() => _waitingOnAd = false);
-    try {
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    } catch (_) {}
-
 
     final screen = won
         ? WinScreen(
