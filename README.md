@@ -517,7 +517,7 @@ Coverage includes widget smoke tests, game mode helpers, loadout/catalog, progre
 ## License / credits
 
 Private student / portfolio project unless otherwise stated.  
-Fiction / entertainment demo.
+Fiction / entertainment demo.  
 
 - Third-party audio: Mixkit Free License — `assets/audio/CREDITS.md`
 - Pixel art: `assets/game/CREDITS.md`

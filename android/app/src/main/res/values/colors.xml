@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#0A0A0A</color>
+    <!-- Hollow Hour palette -->
+    <color name="hollow_charcoal">#0A0A0A</color>
+    <color name="hollow_maroon">#8B1A1A</color>
+    <color name="hollow_maroon_glow">#C41E1E</color>
+    <color name="hollow_ad_border">#14FFFFFF</color>
+    <color name="hollow_ad_surface_dark">#121010</color>
+    <color name="hollow_ad_surface_light">#FFFFFF</color>
+    <color name="hollow_ad_headline_dark">#EBEBEB</color>
+    <color name="hollow_ad_headline_light">#1A1A1A</color>
+    <color name="hollow_ad_body_dark">#8A8A8A</color>
+    <color name="hollow_ad_body_light">#666666</color>
+    <color name="hollow_ad_icon_fill">#2A2420</color>
 </resources>

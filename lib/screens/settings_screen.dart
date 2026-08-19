@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../ads/ad_manager.dart';
+import '../ads/native_ad_widget.dart';
 import '../audio/audio_manager.dart';
 import '../theme/app_assets.dart';
 import '../theme/themed_chrome.dart';
@@ -192,6 +194,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _NavRow(
             label: 'Rate Us',
             onTap: _rateUs,
+          ),
+          const SizedBox(height: 16),
+          NativeAdWidget(
+            adUnitId: AdManager.testNativeAdUnitId,
+            height: 320,
+            format: NativeAdFormat.medium,
+            ensureInitialized: AdManager.instance.ensureInitialized,
           ),
           const SizedBox(height: 28),
           _sectionLabel('Danger Zone'),

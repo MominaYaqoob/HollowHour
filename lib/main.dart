@@ -2,14 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'ads/ad_manager.dart';
 import 'audio/audio_manager.dart';
 import 'connectivity/connectivity_gate.dart';
 import 'prefs/app_flags.dart';
+import 'screens/agree_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
 import 'state/economy_state.dart';
@@ -23,9 +22,8 @@ Future<void> main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   await _ensureFreshInstallIfNeeded();
   await AudioManager.instance.init();
-  // Start UI first — never block/crash launch on AdMob native init.
+  // Ads start only after agree / onboarding (see SplashScreen).
   runApp(const HollowHourApp());
-  unawaited(_initMobileAdsSafely());
 }
 
 Future<void> _ensureFreshInstallIfNeeded() async {
@@ -37,27 +35,6 @@ Future<void> _ensureFreshInstallIfNeeded() async {
     }
   } catch (e, st) {
     debugPrint('Fresh-install check failed: $e\n$st');
-  }
-}
-
-Future<void> _initMobileAdsSafely() async {
-  try {
-    final status = await MobileAds.instance
-        .initialize()
-        .timeout(const Duration(seconds: 12));
-    debugPrint('Mobile Ads initialized: $status');
-
-    // Force test-ad behavior while using Google's official test units.
-    await MobileAds.instance.updateRequestConfiguration(
-      RequestConfiguration(
-        tagForChildDirectedTreatment: TagForChildDirectedTreatment.unspecified,
-        tagForUnderAgeOfConsent: TagForUnderAgeOfConsent.unspecified,
-      ),
-    );
-
-    await AdManager.instance.init().timeout(const Duration(seconds: 20));
-  } catch (e, st) {
-    debugPrint('Mobile Ads init failed: $e\n$st');
   }
 }
 
@@ -88,7 +65,7 @@ class HollowHourApp extends StatelessWidget {
   }
 }
 
-/// Loads economy + onboarding flag, then shows Onboarding or Splash.
+/// Loads economy + consent / onboarding flags, then shows the right first screen.
 class _RootGate extends StatefulWidget {
   const _RootGate();
 
@@ -97,7 +74,7 @@ class _RootGate extends StatefulWidget {
 }
 
 class _RootGateState extends State<_RootGate> {
-  Future<bool>? _bootstrap;
+  Future<({bool agreed, bool onboarded})>? _bootstrap;
 
   @override
   void didChangeDependencies() {
@@ -105,23 +82,27 @@ class _RootGateState extends State<_RootGate> {
     _bootstrap ??= _load();
   }
 
-  Future<bool> _load() async {
+  Future<({bool agreed, bool onboarded})> _load() async {
     await context.read<EconomyState>().loadFromDisk();
     // Start ambient as early as possible (respects persisted Music switch).
     unawaited(AudioManager.instance.playMusic());
-    return AppFlags.hasSeenOnboarding();
+    final agreed = await AppFlags.hasAgreedTerms();
+    final onboarded = await AppFlags.hasSeenOnboarding();
+    return (agreed: agreed, onboarded: onboarded);
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
+    return FutureBuilder<({bool agreed, bool onboarded})>(
       future: _bootstrap,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const MaroonLoaderScaffold();
         }
-        final seen = snapshot.data ?? false;
-        return seen ? const SplashScreen() : const OnboardingScreen();
+        final data = snapshot.data ?? (agreed: false, onboarded: false);
+        if (!data.agreed) return const AgreeScreen();
+        if (!data.onboarded) return const OnboardingScreen();
+        return const SplashScreen();
       },
     );
   }

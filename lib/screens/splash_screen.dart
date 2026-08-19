@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../ads/ad_manager.dart';
 import '../audio/audio_manager.dart';
 import '../theme/app_assets.dart';
 import '../theme/field_backdrop.dart';
@@ -37,6 +40,8 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     AudioManager.instance.playMusic();
+    // Agree + onboarding already passed — UMP, Mobile Ads, App Open preload.
+    unawaited(AdManager.instance.ensureInitialized());
 
     _fogController = AnimationController(
       vsync: this,

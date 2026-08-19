@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../ads/ad_manager.dart';
+import '../ads/native_ad_widget.dart';
 import '../audio/audio_manager.dart';
 import '../game/game_mode.dart';
 import '../state/economy_state.dart';
@@ -269,6 +271,13 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
                     ),
                   ),
                   const Spacer(),
+                  NativeAdWidget(
+                    adUnitId: AdManager.testNativeAdUnitId,
+                    height: 168,
+                    format: NativeAdFormat.small,
+                    ensureInitialized: AdManager.instance.ensureInitialized,
+                  ),
+                  const SizedBox(height: 12),
                   _BeginButton(
                     onPressed: () {
                       final level = _stageLevel;

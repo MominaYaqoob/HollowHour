@@ -73,7 +73,6 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   String? _lastPickupSeen;
   bool _ending = false;
   bool _enteringLevel = true;
-  bool _waitingOnAd = false;
   bool _showEndBanner = false;
   bool _endBannerWon = false;
 
@@ -94,6 +93,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   @override
   void initState() {
     super.initState();
+    AdManager.instance.gameplayActive = true;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     // Damaged HP segment idle flash.
@@ -234,28 +234,10 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     unawaited(_gateLevelEnter());
   }
 
-  /// Brief enter gate so the match clock does not start under the loader / ad.
+  /// Brief enter gate so the match clock does not start under the loader.
   Future<void> _gateLevelEnter() async {
     await Future<void>.delayed(const Duration(milliseconds: 700));
     if (!mounted) return;
-
-    // Level-start interstitial (once per run) — safer than level-end close bugs.
-    final needsWait = !AdManager.instance.isInterstitialReady;
-    if (needsWait && mounted) {
-      setState(() => _waitingOnAd = true);
-    }
-    try {
-      await AdManager.instance.showInterstitial(
-        onPresented: () {
-          if (mounted && _waitingOnAd) {
-            setState(() => _waitingOnAd = false);
-          }
-        },
-      );
-    } catch (_) {}
-    if (!mounted) return;
-    if (_waitingOnAd) setState(() => _waitingOnAd = false);
-
     setState(() => _enteringLevel = false);
     unawaited(AudioManager.instance.ensureMusicPlaying());
     await _maybeShowFirstMatchTutorial();
@@ -339,6 +321,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
 
   @override
   void dispose() {
+    AdManager.instance.gameplayActive = false;
     if (_sessionReady) {
       _gameState.removeListener(_onGameStateChanged);
       _loop.dispose();
@@ -481,36 +464,11 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     required bool canRevive,
   }) {
     if (!mounted || _ending) return;
+    // canRevive ignored — rewarded revive was removed with showRewarded.
 
-    final economy = context.read<EconomyState>();
     final stage = widget.stageLevel.clamp(1, 30);
 
-    // First death: keep this HUD alive under GameOver so revive can resume.
-    // (No end-of-level interstitial here — player may still revive.)
-    if (!won && canRevive) {
-      Navigator.of(context).push(
-        PageRouteBuilder(
-          opaque: true,
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              GameOverScreen(
-            enemiesDefeated: killCount,
-            timeSurvived: timeLabel,
-            embersEarned: embersEarned,
-            levelReached: stage,
-            stageLevel: stage,
-            showReviveButton: true,
-            onConfirmLeave: () => economy.addEmbers(embersEarned),
-            onReviveSuccess: _handleReviveSuccess,
-          ),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-          transitionDuration: const Duration(milliseconds: 600),
-        ),
-      );
-      return;
-    }
-
+    // Every definitive end goes through the result banner.
     _ending = true;
     unawaited(_finishRun(
       won: won,
@@ -534,12 +492,10 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
       economy.updateCharacterLevel(_gameState.playerCharacterId, stage);
     }
 
-    // Result popup only — interstitial runs at level start, not here.
     if (mounted) {
       setState(() {
         _endBannerWon = won;
         _showEndBanner = true;
-        _waitingOnAd = false;
       });
     }
     await Future<void>.delayed(const Duration(milliseconds: 1700));
@@ -570,15 +526,6 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
         transitionDuration: const Duration(milliseconds: 600),
       ),
     );
-  }
-
-  void _handleReviveSuccess() {
-    if (!mounted) return;
-    _gameState.reviveWithPartialHp();
-    _loop.resumeAfterRevive();
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
   }
 
   _ArenaPainter _obtainArenaPainter() {
@@ -1005,11 +952,6 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
               const MaroonLoaderOverlay(message: 'Entering the Hollow…'),
             if (_showEndBanner)
               _LevelEndBanner(won: _endBannerWon),
-            if (_waitingOnAd)
-              const MaroonLoaderOverlay(
-                message: 'Loading…',
-                opaque: false,
-              ),
           ],
         ),
       ),
@@ -1017,7 +959,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   }
 }
 
-/// Brief Cleared / Fail popup before the end-of-level ad.
+/// Brief Cleared / Fail popup at level end.
 class _LevelEndBanner extends StatelessWidget {
   const _LevelEndBanner({required this.won});
 

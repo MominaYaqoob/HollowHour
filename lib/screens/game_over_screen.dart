@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../ads/ad_manager.dart';
 import '../theme/field_backdrop.dart';
 import '../theme/maroon_loader.dart';
 import 'gameplay_hud_screen.dart';
@@ -15,8 +14,6 @@ class GameOverScreen extends StatefulWidget {
     this.levelReached = 1,
     this.stageLevel = 1,
     this.headline = 'The Hollow Claims You',
-    this.showReviveButton = false,
-    this.onReviveSuccess,
     this.onConfirmLeave,
   });
 
@@ -26,12 +23,6 @@ class GameOverScreen extends StatefulWidget {
   final int levelReached;
   final int stageLevel;
   final String headline;
-
-  /// First death in a run only — "Watch Ad to Revive".
-  final bool showReviveButton;
-
-  /// Called after a rewarded ad is completed successfully.
-  final VoidCallback? onReviveSuccess;
 
   /// Called once when leaving via Retry / Main Menu (e.g. award pending embers).
   final VoidCallback? onConfirmLeave;
@@ -56,7 +47,6 @@ class _GameOverScreenState extends State<GameOverScreen>
   late final Animation<double> _headlineScale;
   late final Animation<double> _statsProgress;
 
-  bool _showRevive = false;
   bool _busy = false;
   bool _leaveConfirmed = false;
 
@@ -114,27 +104,6 @@ class _GameOverScreenState extends State<GameOverScreen>
       if (!mounted) return;
       _statsController.forward();
     });
-
-    _pollReviveAvailability();
-  }
-
-  void _pollReviveAvailability() {
-    if (!widget.showReviveButton) return;
-    var attempts = 0;
-    void check() {
-      if (!mounted || !widget.showReviveButton) return;
-      final ready = AdManager.instance.isRewardedReady;
-      if (ready != _showRevive) {
-        setState(() => _showRevive = ready);
-      }
-      // Stop polling if still unloaded — hide revive rather than spin forever.
-      if (!ready && attempts < 20) {
-        attempts++;
-        Future<void>.delayed(const Duration(milliseconds: 500), check);
-      }
-    }
-
-    check();
   }
 
   @override
@@ -175,31 +144,6 @@ class _GameOverScreenState extends State<GameOverScreen>
     _confirmLeaveOnce();
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
-  }
-
-  Future<void> _watchAdToRevive() async {
-    if (_busy || !_showRevive) return;
-    setState(() => _busy = true);
-    var earned = false;
-    try {
-      earned = await AdManager.instance.showRewarded(
-        onPresented: () {
-          if (mounted) setState(() => _busy = false);
-        },
-      );
-    } catch (_) {
-      earned = false;
-    }
-    if (!mounted) return;
-    if (earned) {
-      widget.onReviveSuccess?.call();
-      return;
-    }
-    // Ad failed or dismissed without reward — hide revive to avoid soft-lock.
-    setState(() {
-      _busy = false;
-      _showRevive = false;
-    });
   }
 
   @override
@@ -313,17 +257,9 @@ class _GameOverScreenState extends State<GameOverScreen>
                     },
                   ),
                   const Spacer(flex: 3),
-                  if (_showRevive) ...[
-                    _GlowButton(
-                      label: 'Watch Ad to Revive',
-                      primary: true,
-                      onTap: _watchAdToRevive,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
                   _GlowButton(
                     label: 'Retry',
-                    primary: !_showRevive,
+                    primary: true,
                     onTap: _retry,
                   ),
                   const SizedBox(height: 12),
