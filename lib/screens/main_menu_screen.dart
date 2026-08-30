@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../audio/audio_manager.dart';
 import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
+import '../theme/branded_hero.dart';
 import '../theme/field_backdrop.dart';
 import '../theme/themed_chrome.dart';
 import 'character_select_screen.dart';
@@ -252,15 +253,18 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                       );
                     },
                   ),
-                  const SizedBox(height: 8),
-                  Image.asset(
-                    AppAssets.brandingLogo,
-                    width: MediaQuery.sizeOf(context).width * 0.62,
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.high,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  const SizedBox(height: 12),
+                  AnimatedBuilder(
+                    animation: _chromePulse,
+                    builder: (context, _) {
+                      return BrandedHeroMark(
+                        widthFactor: 0.56,
+                        heightFactor: 0.30,
+                        glowStrength: 0.22 + _chromePulse.value * 0.22,
+                      );
+                    },
                   ),
-                  const Spacer(flex: 2),
+                  const Spacer(),
                   _MenuButton(
                     label: 'Play',
                     primary: true,
@@ -302,7 +306,7 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                     stagger: 0.36,
                     onTap: () => _open(const ShopScreen()),
                   ),
-                  const Spacer(flex: 3),
+                  const SizedBox(height: 10),
                   Text(
                     'v1.0.0',
                     style: TextStyle(

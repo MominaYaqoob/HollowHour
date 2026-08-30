@@ -2,8 +2,8 @@
 class AppAssets {
   AppAssets._();
 
-  static const brandingIcon = 'assets/branding/hollow_hour_app_icon.png';
-  static const brandingLogo = 'assets/branding/hollow_hour_logo_horizontal.png';
+  static const brandingIcon = 'assets/branding/hollow_hour_app_icon.jpeg';
+  static const brandingLogo = 'assets/branding/hollow_hour_logo_horizontal.jpeg';
 
   static const bgField = 'assets/bg/bg_hollow_field.png';
   static const bgFog = 'assets/bg/bg_fog_layer.png';

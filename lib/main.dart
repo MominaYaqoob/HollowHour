@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -86,6 +87,10 @@ class _RootGateState extends State<_RootGate> {
     await context.read<EconomyState>().loadFromDisk();
     // Start ambient as early as possible (respects persisted Music switch).
     unawaited(AudioManager.instance.playMusic());
+    // Chrome debug: reopen Agree so localhost can preview that screen.
+    if (kDebugMode && kIsWeb) {
+      await AppFlags.setHasAgreedTerms(false);
+    }
     final agreed = await AppFlags.hasAgreedTerms();
     final onboarded = await AppFlags.hasSeenOnboarding();
     return (agreed: agreed, onboarded: onboarded);

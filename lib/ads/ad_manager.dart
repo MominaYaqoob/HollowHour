@@ -22,8 +22,12 @@ class AdManager with WidgetsBindingObserver {
   static const String testAppOpenAdUnitId =
       'ca-app-pub-3940256099942544/9257395921';
 
+  // Production values — safe balance: not shown on trivial quick app-switches
+  // (5s minimum background), not shown too frequently to risk AdMob's
+  // disruptive-ads guidance (45s cooldown). Do not lower below 5s/30s
+  // without reviewing AdMob's App Open ad best practices again.
   static const _minBackground = Duration(seconds: 5);
-  static const _minCooldown = Duration(minutes: 3);
+  static const _minCooldown = Duration(seconds: 45);
 
   Future<void>? _initFuture;
 

@@ -3,7 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../audio/audio_manager.dart';
 import '../prefs/app_flags.dart';
-import '../theme/app_assets.dart';
+import '../theme/branded_hero.dart';
 import '../theme/field_backdrop.dart';
 import 'onboarding_screen.dart';
 import 'splash_screen.dart';
@@ -93,11 +93,9 @@ class _AgreeScreenState extends State<AgreeScreen> {
               padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
               child: Column(
                 children: [
-                  const Spacer(flex: 2),
-                  Image.asset(
-                    AppAssets.brandingLogo,
-                    height: 56,
-                    fit: BoxFit.contain,
+                  BrandedHeroMark(
+                    widthFactor: 0.50,
+                    heightFactor: 0.26,
                     errorBuilder: (_, _, _) => Text(
                       'HOLLOW HOUR',
                       style: TextStyle(
@@ -108,7 +106,7 @@ class _AgreeScreenState extends State<AgreeScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 18),
                   Text(
                     'Before You Enter',
                     textAlign: TextAlign.center,
@@ -219,7 +217,7 @@ class _AgreeScreenState extends State<AgreeScreen> {
                       ],
                     ),
                   ),
-                  const Spacer(flex: 3),
+                  const Spacer(),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton(
