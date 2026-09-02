@@ -9,6 +9,7 @@ class WeaponStats {
     required this.projectileRadiusMul,
     required this.aimRangeMul,
     required this.shopDescription,
+    this.costEmbers = 0,
   });
 
   final String id;
@@ -23,6 +24,9 @@ class WeaponStats {
   final double projectileRadiusMul;
   final double aimRangeMul;
   final String shopDescription;
+
+  /// Embers to unlock. `0` means starter loadout.
+  final int costEmbers;
 }
 
 class WeaponCatalog {
@@ -40,6 +44,7 @@ class WeaponCatalog {
       aimRangeMul: 0.95,
       shopDescription:
           'Heavy close cuts — +35% damage, slower fire.',
+      costEmbers: 500,
     ),
     'pistol': WeaponStats(
       id: 'pistol',
@@ -62,6 +67,7 @@ class WeaponCatalog {
       aimRangeMul: 0.90,
       shopDescription:
           'Brutal cleave — +55% damage, slowest fire, wider hits.',
+      costEmbers: 1500,
     ),
     'staff': WeaponStats(
       id: 'staff',
@@ -73,6 +79,7 @@ class WeaponCatalog {
       aimRangeMul: 1.15,
       shopDescription:
           'Quick bolts — −15% damage, much faster fire, more range.',
+      costEmbers: 2500,
     ),
     'bow': WeaponStats(
       id: 'bow',
@@ -84,9 +91,12 @@ class WeaponCatalog {
       aimRangeMul: 1.25,
       shopDescription:
           'Long shots — +15% damage, faster fire, longest range.',
+      costEmbers: 3500,
     ),
   };
 
   static WeaponStats forId(String? id) =>
       byId[id] ?? byId['pistol']!;
+
+  static int costEmbers(String id) => byId[id]?.costEmbers ?? 0;
 }

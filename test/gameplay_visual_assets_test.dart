@@ -27,4 +27,9 @@ void main() {
       expect(data.lengthInBytes, greaterThan(50), reason: path);
     }
   });
+
+  test('heartbeat sfx asset exists', () async {
+    final data = await rootBundle.load('assets/audio/sfx_heartbeat.wav');
+    expect(data.lengthInBytes, greaterThan(100));
+  });
 }

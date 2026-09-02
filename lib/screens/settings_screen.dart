@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../ads/ad_manager.dart';
 import '../ads/native_ad_widget.dart';
 import '../audio/audio_manager.dart';
+import '../prefs/display_settings.dart';
 import '../theme/app_assets.dart';
 import '../theme/themed_chrome.dart';
 
@@ -23,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _sfx;
   late bool _music;
   late bool _vibration;
+  late double _brightness;
 
   @override
   void initState() {
@@ -31,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _sfx = audio.sfxEnabled;
     _music = audio.musicEnabled;
     _vibration = audio.vibrationEnabled;
+    _brightness = DisplaySettings.instance.brightness;
   }
 
   Future<void> _confirmReset() async {
@@ -185,6 +188,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
           const SizedBox(height: 20),
+          _sectionLabel('Display'),
+          const SizedBox(height: 8),
+          _BrightnessRow(
+            value: _brightness,
+            onChanged: (v) async {
+              setState(() => _brightness = v);
+              await DisplaySettings.instance.setBrightness(v);
+            },
+          ),
+          const SizedBox(height: 20),
           _sectionLabel('Legal'),
           const SizedBox(height: 8),
           _NavRow(
@@ -299,6 +312,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
         fontSize: 11,
         letterSpacing: 2,
         color: Colors.white.withValues(alpha: 0.35),
+      ),
+    );
+  }
+}
+
+class _BrightnessRow extends StatelessWidget {
+  const _BrightnessRow({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  static const Color _maroon = Color(0xFF8B1A1A);
+  static const Color _maroonGlow = Color(0xFFC41E1E);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Brightness',
+                  style: TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 15,
+                    letterSpacing: 1,
+                    color: Colors.white.withValues(alpha: 0.8),
+                  ),
+                ),
+              ),
+              Text(
+                value.toStringAsFixed(2),
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: _maroonGlow,
+              inactiveTrackColor: _maroon.withValues(alpha: 0.35),
+              thumbColor: _maroonGlow,
+              overlayColor: _maroonGlow.withValues(alpha: 0.18),
+            ),
+            child: Slider(
+              min: DisplaySettings.minBrightness,
+              max: DisplaySettings.maxBrightness,
+              value: value.clamp(
+                DisplaySettings.minBrightness,
+                DisplaySettings.maxBrightness,
+              ),
+              onChanged: onChanged,
+            ),
+          ),
+        ],
       ),
     );
   }

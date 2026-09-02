@@ -7,8 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio/audio_manager.dart';
-import 'connectivity/connectivity_gate.dart';
 import 'prefs/app_flags.dart';
+import 'prefs/display_settings.dart';
 import 'screens/agree_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
@@ -23,6 +23,7 @@ Future<void> main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   await _ensureFreshInstallIfNeeded();
   await AudioManager.instance.init();
+  await DisplaySettings.instance.load();
   // Ads start only after agree / onboarding (see SplashScreen).
   runApp(const HollowHourApp());
 }
@@ -56,9 +57,6 @@ class HollowHourApp extends StatelessWidget {
             seedColor: const Color(0xFF8B1A1A),
             brightness: Brightness.dark,
           ),
-        ),
-        builder: (context, child) => ConnectivityGate(
-          child: child ?? const SizedBox.shrink(),
         ),
         home: const _RootGate(),
       ),

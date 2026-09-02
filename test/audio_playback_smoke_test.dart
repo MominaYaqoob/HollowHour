@@ -20,6 +20,8 @@ void main() {
     await audio.playMusic();
     audio.playTap();
     audio.playPurchase();
+    await audio.startHeartbeat();
+    await audio.stopHeartbeat();
     await audio.pauseMusic();
     await audio.resumeMusic();
     await audio.setMusicEnabled(false);

@@ -12,11 +12,14 @@ import '../game/aim_fire_controller.dart';
 import '../game/game_loop.dart';
 import '../game/game_mode.dart';
 import '../game/game_state.dart';
+import '../game/hp_segments.dart';
 import '../game/leveling.dart';
+import '../game/offscreen_indicators.dart';
 import '../game/player_controller.dart';
 import '../game/rune_catalog.dart';
 import '../game/weapon_catalog.dart';
 import '../prefs/app_flags.dart';
+import '../prefs/display_settings.dart';
 import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
 import '../theme/field_backdrop.dart';
@@ -44,12 +47,14 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     with TickerProviderStateMixin {
   static const Color _charcoal = Color(0xFF0A0A0A);
   static const Color _maroon = Color(0xFF8B1A1A);
+  static const Color _maroonGlow = Color(0xFFC41E1E);
 
   static const int _hpSegments = 6;
 
   late final AnimationController _damagedFlashController;
   late final AnimationController _pickupController;
   late final AnimationController _vignetteController;
+  late final AnimationController _criticalPulseController;
   late final AnimationController _levelUpController;
   late final AnimationController _controlsHintController;
 
@@ -75,6 +80,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   bool _enteringLevel = true;
   bool _showEndBanner = false;
   bool _endBannerWon = false;
+  bool _criticalHpLatched = false;
 
   /// Loaded top-down sheets for the equipped character (idle/walk × facing).
   _PlayerSpriteSet? _playerSprites;
@@ -152,6 +158,12 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
       TweenSequenceItem(tween: Tween(begin: 0.85, end: 0.0), weight: 2.2),
     ]).animate(
       CurvedAnimation(parent: _vignetteController, curve: Curves.easeOut),
+    );
+
+    // Critical-HP looping edge pulse (separate from the one-shot hit vignette).
+    _criticalPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 850),
     );
 
     // Level-up overlay.
@@ -336,19 +348,54 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     }
     _xpOrbSprite?.dispose();
     _magnetSprite?.dispose();
+    unawaited(AudioManager.instance.stopHeartbeat());
     _damagedFlashController.dispose();
     _pickupController.dispose();
     _vignetteController.dispose();
+    _criticalPulseController.dispose();
     _levelUpController.dispose();
     _controlsHintController.dispose();
     super.dispose();
   }
 
   void _onGameStateChanged() {
+    _syncCriticalHp();
     final label = _gameState.lastPickupLabel;
     if (label != null && label != _lastPickupSeen) {
       _lastPickupSeen = label;
       _triggerPickup();
+    }
+  }
+
+  void _syncCriticalHp() {
+    if (!_sessionReady) return;
+    final critical = !_ending &&
+        !_enteringLevel &&
+        _gameState.isRunning &&
+        isHpCritical(
+          playerHp: _gameState.playerHp,
+          maxHp: _gameState.maxHp,
+          segments: _hpSegments,
+        );
+    if (critical) {
+      if (!_criticalPulseController.isAnimating) {
+        _criticalPulseController.repeat(reverse: true);
+      }
+      if (!_criticalHpLatched) {
+        _criticalHpLatched = true;
+        unawaited(AudioManager.instance.startHeartbeat());
+      }
+    } else {
+      if (_criticalPulseController.isAnimating ||
+          _criticalPulseController.value != 0) {
+        _criticalPulseController
+          ..stop()
+          ..value = 0;
+      }
+      if (_criticalHpLatched) {
+        _criticalHpLatched = false;
+        unawaited(AudioManager.instance.stopHeartbeat());
+      }
     }
   }
 
@@ -464,19 +511,29 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     required bool canRevive,
   }) {
     if (!mounted || _ending) return;
-    // canRevive ignored — rewarded revive was removed with showRewarded.
 
     final stage = widget.stageLevel.clamp(1, 30);
 
     // Every definitive end goes through the result banner.
     _ending = true;
+    _syncCriticalHp();
     unawaited(_finishRun(
       won: won,
       killCount: killCount,
       timeLabel: timeLabel,
       embersEarned: embersEarned,
       stage: stage,
+      canRevive: canRevive,
     ));
+  }
+
+  void _resumeAfterRewardedRevive() {
+    _ending = false;
+    _gameState.reviveWithPartialHp(fraction: 0.5);
+    _loop.resumeAfterRevive();
+    unawaited(AudioManager.instance.resumeMusic());
+    _syncCriticalHp();
+    if (mounted) setState(() {});
   }
 
   Future<void> _finishRun({
@@ -485,10 +542,11 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     required String timeLabel,
     required int embersEarned,
     required int stage,
+    required bool canRevive,
   }) async {
     final economy = context.read<EconomyState>();
-    economy.addEmbers(embersEarned);
     if (won) {
+      economy.addEmbers(embersEarned);
       economy.updateCharacterLevel(_gameState.playerCharacterId, stage);
     }
 
@@ -502,24 +560,37 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
     if (!mounted) return;
     setState(() => _showEndBanner = false);
 
-    final screen = won
-        ? WinScreen(
+    if (won) {
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => WinScreen(
             enemiesDefeated: killCount,
             timeSurvived: timeLabel,
             embersEarned: embersEarned,
             levelReached: stage,
-          )
-        : GameOverScreen(
-            enemiesDefeated: killCount,
-            timeSurvived: timeLabel,
-            embersEarned: embersEarned,
-            levelReached: stage,
-            stageLevel: stage,
-          );
+          ),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          transitionDuration: const Duration(milliseconds: 600),
+        ),
+      );
+      return;
+    }
 
-    Navigator.of(context).pushReplacement(
+    // Push so this match stays under Game Over for rewarded revive.
+    Navigator.of(context).push(
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => screen,
+        pageBuilder: (context, animation, secondaryAnimation) => GameOverScreen(
+          enemiesDefeated: killCount,
+          timeSurvived: timeLabel,
+          embersEarned: embersEarned,
+          levelReached: stage,
+          stageLevel: stage,
+          canRevive: canRevive,
+          onRevive: _resumeAfterRewardedRevive,
+          onConfirmLeave: () => economy.addEmbers(embersEarned),
+        ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -602,10 +673,30 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
               },
             ),
 
+            // Brightness overlay — canvas only, HUD stays readable.
+            ListenableBuilder(
+              listenable: DisplaySettings.instance,
+              builder: (context, _) {
+                final display = DisplaySettings.instance;
+                final darken = display.darkenOpacity;
+                final lift = display.brightenOpacity;
+                if (darken <= 0 && lift <= 0) {
+                  return const SizedBox.shrink();
+                }
+                return IgnorePointer(
+                  child: ColoredBox(
+                    color: darken > 0
+                        ? Colors.black.withValues(alpha: darken)
+                        : Colors.white.withValues(alpha: lift),
+                  ),
+                );
+              },
+            ),
+
             // HUD chrome — sticks stay outside 60fps; live readouts use slices.
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                 child: Stack(
                   children: [
                     // Top-left HP — rebuild only when segment index changes.
@@ -613,16 +704,11 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                       alignment: Alignment.topLeft,
                       child: _GameSlice<int>(
                         listenable: _gameState,
-                        selector: (s) {
-                          if (s.playerHp <= 0) return -1;
-                          final hpRatio = s.maxHp <= 0
-                              ? 0.0
-                              : (s.playerHp / s.maxHp).clamp(0.0, 1.0);
-                          return math.max(
-                            0,
-                            (hpRatio * _hpSegments).ceil() - 1,
-                          );
-                        },
+                        selector: (s) => hpDamagedIndex(
+                          playerHp: s.playerHp,
+                          maxHp: s.maxHp,
+                          segments: _hpSegments,
+                        ),
                         builder: (context, damagedIndex) => _HpBar(
                           segments: _hpSegments,
                           damagedIndex: damagedIndex,
@@ -722,7 +808,11 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                     Align(
                       alignment: Alignment.bottomLeft,
                       child: Padding(
-                        padding: const EdgeInsets.only(left: 8, bottom: 8),
+                        padding: const EdgeInsets.only(
+                          left: 8,
+                          bottom: 8,
+                          right: 20,
+                        ),
                         child: _MoveJoystickControl(
                           outerSize: 96,
                           innerSize: 42,
@@ -768,7 +858,11 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                     Align(
                       alignment: Alignment.bottomRight,
                       child: Padding(
-                        padding: const EdgeInsets.only(right: 8, bottom: 8),
+                        padding: const EdgeInsets.only(
+                          right: 8,
+                          bottom: 8,
+                          left: 20,
+                        ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.center,
@@ -784,27 +878,54 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                                 final current = ammo.$1;
                                 final max = ammo.$2;
                                 final reloading = ammo.$3;
+                                final ammoColor = reloading
+                                    ? Colors.white.withValues(alpha: 0.45)
+                                    : Colors.white.withValues(alpha: 0.88);
                                 return Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text(
-                                      '${current.toString().padLeft(3, '0')}/${max.toString().padLeft(3, '0')}',
-                                      style: TextStyle(
-                                        fontFamily: 'monospace',
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 1,
-                                        color: reloading
-                                            ? Colors.white
-                                                .withValues(alpha: 0.45)
-                                            : Colors.white
-                                                .withValues(alpha: 0.88),
-                                        shadows: [
-                                          Shadow(
-                                            color: _maroon.withValues(
-                                              alpha: 0.55,
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.55,
+                                        ),
+                                        borderRadius: BorderRadius.circular(2),
+                                        border: Border.all(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.25,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.gps_fixed,
+                                            size: 12,
+                                            color: ammoColor,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            '${current.toString().padLeft(3, '0')}/${max.toString().padLeft(3, '0')}',
+                                            style: TextStyle(
+                                              fontFamily: 'monospace',
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              letterSpacing: 1,
+                                              color: ammoColor,
+                                              shadows: [
+                                                Shadow(
+                                                  color: _maroon.withValues(
+                                                    alpha: 0.55,
+                                                  ),
+                                                  blurRadius: 6,
+                                                ),
+                                              ],
                                             ),
-                                            blurRadius: 6,
                                           ),
                                         ],
                                       ),
@@ -873,6 +994,15 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
               ),
             ),
 
+            // Off-screen enemy arrows — CustomPaint repaints with GameState ticks.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _OffscreenEnemyArrowsPainter(_gameState),
+                ),
+              ),
+            ),
+
             // Damage flash vignette.
             AnimatedBuilder(
               animation: _vignetteController,
@@ -892,6 +1022,41 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
                             Colors.transparent,
                             Color(0x88C41E1E),
                             Color(0xEEC41E1E),
+                          ],
+                          stops: [0.25, 0.65, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            // Critical-HP looping maroon border / edge pulse.
+            AnimatedBuilder(
+              animation: _criticalPulseController,
+              builder: (context, _) {
+                if (!_criticalPulseController.isAnimating &&
+                    _criticalPulseController.value <= 0.001) {
+                  return const SizedBox.shrink();
+                }
+                final pulse = 0.28 + 0.42 * _criticalPulseController.value;
+                return IgnorePointer(
+                  child: Opacity(
+                    opacity: pulse,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: _maroonGlow.withValues(alpha: 0.95),
+                          width: 8,
+                        ),
+                        gradient: const RadialGradient(
+                          center: Alignment.center,
+                          radius: 0.95,
+                          colors: [
+                            Colors.transparent,
+                            Color(0x66C41E1E),
+                            Color(0xCCC41E1E),
                           ],
                           stops: [0.25, 0.65, 1.0],
                         ),
@@ -1269,12 +1434,19 @@ class _ArenaPainter extends CustomPainter {
   static const double _playerRefFramePx = 64;
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
-  /// Light fog grade for env props — keep trees visible on dark ground.
+  /// Fog-grade env props — desaturate, recede, keep a readable silhouette.
   static const ColorFilter _envMuteFilter = ColorFilter.matrix(<double>[
-    0.72, 0.18, 0.10, 0, 8,
-    0.16, 0.70, 0.14, 0, 6,
-    0.14, 0.18, 0.68, 0, 10,
-    0, 0, 0, 1, 0,
+    0.38, 0.36, 0.26, 0, 10,
+    0.32, 0.38, 0.28, 0, 12,
+    0.28, 0.30, 0.42, 0, 18,
+    0, 0, 0, 0.78, 0,
+  ]);
+
+  static const ColorFilter _envBlurGhostFilter = ColorFilter.matrix(<double>[
+    0.32, 0.34, 0.30, 0, 12,
+    0.30, 0.34, 0.32, 0, 14,
+    0.26, 0.28, 0.40, 0, 18,
+    0, 0, 0, 0.22, 0,
   ]);
 
   /// Soften enemy pack saturation toward pastel fog tone.
@@ -1353,6 +1525,9 @@ class _ArenaPainter extends CustomPainter {
     final playerY = state.playerPosition.dy;
     _paintObstacles(canvas, onlyIf: (o) => o.position.dy < playerY);
 
+    // Soft read-light around the player — does not change fog/vignette HUD.
+    _paintPlayerLight(canvas);
+
     // Enemies — sprite sheets (fallback to colored circles).
     for (final e in state.enemies) {
       _paintEnemy(canvas, e);
@@ -1383,6 +1558,23 @@ class _ArenaPainter extends CustomPainter {
     }
 
     canvas.restore();
+  }
+
+  /// Low-opacity radial glow so the combat pocket around the player stays readable.
+  void _paintPlayerLight(Canvas canvas) {
+    const radius = 108.0;
+    final center = state.playerPosition;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final paint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          const Color(0xFFFFF4E8).withValues(alpha: 0.14),
+          const Color(0xFFFFF4E8).withValues(alpha: 0.06),
+          const Color(0xFFFFF4E8).withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 0.42, 1.0],
+      ).createShader(rect);
+    canvas.drawCircle(center, radius, paint);
   }
 
   /// Soft oval shadow under feet — cosmetic only (no hitbox change).
@@ -1448,9 +1640,15 @@ class _ArenaPainter extends CustomPainter {
     final batch = state.obstacles.where(onlyIf).toList();
     if (batch.isEmpty) return;
 
-    // Per-sprite mute via Paint.colorFilter (avoid expensive saveLayer).
+    // Soft recede: fog bloom + slight scale-up ghost, then muted sprite.
+    final bloomPaint = Paint()
+      ..color = const Color(0xFF141210).withValues(alpha: 0.42)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    final ghostPaint = Paint()
+      ..filterQuality = FilterQuality.medium
+      ..colorFilter = _envBlurGhostFilter;
     final paint = Paint()
-      ..filterQuality = FilterQuality.none
+      ..filterQuality = FilterQuality.medium
       ..colorFilter = _envMuteFilter;
     for (final o in batch) {
       final img = envSprites?[o.assetPath];
@@ -1468,6 +1666,20 @@ class _ArenaPainter extends CustomPainter {
         o.position.dy - o.drawHeight + 4,
         o.drawWidth,
         o.drawHeight,
+      );
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(o.position.dx, o.position.dy - o.drawHeight * 0.38),
+          width: o.drawWidth * 1.2,
+          height: o.drawHeight * 0.85,
+        ),
+        bloomPaint,
+      );
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        dst.inflate(5),
+        ghostPaint,
       );
       canvas.drawImageRect(
         img,
@@ -1633,6 +1845,57 @@ class _ArenaPainter extends CustomPainter {
   }
 }
 
+class _OffscreenEnemyArrowsPainter extends CustomPainter {
+  _OffscreenEnemyArrowsPainter(this.state) : super(repaint: state);
+
+  final GameState state;
+
+  static const Color _maroonGlow = Color(0xFFC41E1E);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final view = state.viewSize.isEmpty ? size : state.viewSize;
+    final arrows = computeOffscreenEnemyArrows(
+      cameraTopLeft: state.cameraTopLeft,
+      viewSize: view,
+      playerPosition: state.playerPosition,
+      enemyPositions: state.enemies
+          .where((e) => !e.isDead)
+          .map((e) => e.position),
+    );
+    if (arrows.isEmpty) return;
+
+    final fill = Paint()..color = _maroonGlow.withValues(alpha: 0.92);
+    final glow = Paint()
+      ..color = _maroonGlow.withValues(alpha: 0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+    final outline = Paint()
+      ..color = Colors.black.withValues(alpha: 0.45)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    for (final arrow in arrows) {
+      canvas.save();
+      canvas.translate(arrow.screenPosition.dx, arrow.screenPosition.dy);
+      canvas.rotate(arrow.angle);
+      final triangle = Path()
+        ..moveTo(11, 0)
+        ..lineTo(-8, 7)
+        ..lineTo(-4, 0)
+        ..lineTo(-8, -7)
+        ..close();
+      canvas.drawPath(triangle, glow);
+      canvas.drawPath(triangle, fill);
+      canvas.drawPath(triangle, outline);
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _OffscreenEnemyArrowsPainter oldDelegate) =>
+      oldDelegate.state != state;
+}
+
 class _HpBar extends StatelessWidget {
   const _HpBar({
     required this.segments,
@@ -1694,8 +1957,8 @@ class _HpBar extends StatelessWidget {
                     color: Colors.black.withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(2),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      width: 0.8,
+                      color: Colors.white.withValues(alpha: 0.45),
+                      width: 1.2,
                     ),
                     boxShadow: isDamaged
                         ? [
@@ -1708,18 +1971,32 @@ class _HpBar extends StatelessWidget {
                           ]
                         : null,
                   ),
-                  child: FractionallySizedBox(
-                    widthFactor: 1,
-                    heightFactor: 1,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(1.5),
-                        color: Color.lerp(
-                          Colors.transparent,
-                          isDamaged ? _maroonGlow : _maroon,
-                          fill,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(1.5),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ColoredBox(
+                          color: Color.lerp(
+                            Colors.transparent,
+                            isDamaged ? _maroonGlow : _maroon,
+                            fill,
+                          )!,
                         ),
-                      ),
+                        if (fill > 0)
+                          Align(
+                            alignment: Alignment.topCenter,
+                            child: ColoredBox(
+                              color: Colors.white.withValues(
+                                alpha: 0.12 * fill,
+                              ),
+                              child: const SizedBox(
+                                height: 1,
+                                width: double.infinity,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 );

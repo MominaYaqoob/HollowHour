@@ -7,6 +7,7 @@ class RuneStats {
     this.moveSpeedBonus = 0,
     this.damageBonus = 0,
     required this.shopDescription,
+    this.costEmbers = 0,
   });
 
   final String id;
@@ -15,6 +16,9 @@ class RuneStats {
   final double moveSpeedBonus;
   final double damageBonus;
   final String shopDescription;
+
+  /// Embers to unlock. `0` means starter loadout.
+  final int costEmbers;
 }
 
 class RuneCatalog {
@@ -26,16 +30,20 @@ class RuneCatalog {
       name: 'Vein Rune',
       maxHpBonus: 18,
       shopDescription: 'Increases maximum HP by 18.',
+      costEmbers: 500,
     ),
     'gale': RuneStats(
       id: 'gale',
       name: 'Gale Rune',
       moveSpeedBonus: 18,
       shopDescription: 'Increases move speed by 18.',
+      costEmbers: 1500,
     ),
   };
 
   static RuneStats? forId(String id) => byId[id];
+
+  static int costEmbers(String id) => byId[id]?.costEmbers ?? 0;
 
   /// Sum bonuses for every equipped rune id.
   static ({double maxHp, double moveSpeed, double damage}) combined(

@@ -72,6 +72,8 @@ flutter:
     - assets/branding/
     - assets/bg/
     - assets/icons/
+    - assets/icons/weapons/
+    - assets/icons/runes/
     - assets/characters/
     - assets/audio/
     - assets/game/player/

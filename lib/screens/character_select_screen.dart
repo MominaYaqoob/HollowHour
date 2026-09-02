@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../audio/audio_manager.dart';
+import '../game/character_catalog.dart';
 import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
+import '../theme/themed_chrome.dart';
 import 'pre_game_setup_screen.dart';
 
 /// Character roster entry used by the select carousel.
@@ -11,24 +13,25 @@ class GameCharacter {
   const GameCharacter({
     required this.id,
     required this.name,
-    required this.hp,
-    required this.speed,
     required this.abilityIcon,
     required this.abilityName,
     required this.portraitAsset,
     required this.lockedPortraitAsset,
-    this.unlockCost = 0,
   });
 
   final String id;
   final String name;
-  final int hp;
-  final int speed;
   final IconData abilityIcon;
   final String abilityName;
   final String portraitAsset;
   final String lockedPortraitAsset;
-  final int unlockCost;
+
+  CharacterStats get _stats =>
+      CharacterCatalog.byId[id] ?? CharacterCatalog.byId['wanderer']!;
+
+  int get hp => _stats.hp;
+  int get speed => _stats.speed;
+  int get unlockCost => _stats.costEmbers;
 }
 
 /// Character select — swipeable portrait carousel with live stats and Select CTA.
@@ -47,8 +50,6 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
     GameCharacter(
       id: 'wanderer',
       name: 'Wanderer',
-      hp: 120,
-      speed: 8,
       abilityIcon: Icons.shield_moon_outlined,
       abilityName: 'Warding Veil',
       portraitAsset: AppAssets.charWanderer,
@@ -57,8 +58,6 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
     GameCharacter(
       id: 'huntress',
       name: 'Huntress',
-      hp: 85,
-      speed: 14,
       abilityIcon: Icons.visibility_outlined,
       abilityName: 'Night Sight',
       portraitAsset: AppAssets.charHuntress,
@@ -67,9 +66,6 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
     GameCharacter(
       id: 'scholar',
       name: 'Scholar',
-      unlockCost: 450,
-      hp: 95,
-      speed: 11,
       abilityIcon: Icons.auto_awesome,
       abilityName: 'Cinder Burst',
       portraitAsset: AppAssets.charScholar,
@@ -78,9 +74,6 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
     GameCharacter(
       id: 'brute',
       name: 'Brute',
-      unlockCost: 700,
-      hp: 140,
-      speed: 6,
       abilityIcon: Icons.hardware_outlined,
       abilityName: 'Soul Tether',
       portraitAsset: AppAssets.charBrute,
@@ -89,9 +82,6 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
     GameCharacter(
       id: 'ghost',
       name: 'Ghost',
-      unlockCost: 950,
-      hp: 110,
-      speed: 12,
       abilityIcon: Icons.flash_on_outlined,
       abilityName: 'Rift Slash',
       portraitAsset: AppAssets.charGhost,
@@ -390,15 +380,18 @@ class _CharacterCardState extends State<_CharacterCard>
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.asset(
-                          locked
-                              ? character.lockedPortraitAsset
-                              : character.portraitAsset,
-                          fit: BoxFit.cover,
-                        ),
+                        locked
+                            ? LockedPortraitImage(
+                                asset: character.portraitAsset,
+                                fit: BoxFit.cover,
+                              )
+                            : Image.asset(
+                                character.portraitAsset,
+                                fit: BoxFit.cover,
+                              ),
                         if (locked)
                           ColoredBox(
-                            color: Colors.black.withValues(alpha: 0.45),
+                            color: Colors.black.withValues(alpha: 0.28),
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [

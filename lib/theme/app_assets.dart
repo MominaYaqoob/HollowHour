@@ -15,6 +15,15 @@ class AppAssets {
   static const iconShop = 'assets/icons/icon_shop.png';
   static const iconPause = 'assets/icons/icon_pause.png';
 
+  static const iconWeaponBlade = 'assets/icons/weapons/blade.png';
+  static const iconWeaponPistol = 'assets/icons/weapons/pistol.png';
+  static const iconWeaponAxe = 'assets/icons/weapons/axe.png';
+  static const iconWeaponStaff = 'assets/icons/weapons/staff.png';
+  static const iconWeaponBow = 'assets/icons/weapons/bow.png';
+
+  static const iconRuneVein = 'assets/icons/runes/vein.png';
+  static const iconRuneGale = 'assets/icons/runes/gale.png';
+
   static const charWanderer = 'assets/characters/char_wanderer.png';
   static const charWandererLocked = 'assets/characters/char_wanderer_locked.png';
   static const charHuntress = 'assets/characters/char_huntress.png';

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../audio/audio_manager.dart';
+import '../game/character_catalog.dart';
 import '../game/rune_catalog.dart';
 import '../game/weapon_catalog.dart';
 import '../state/economy_state.dart';
@@ -16,7 +17,7 @@ class ShopItem {
     required this.name,
     required this.category,
     required this.description,
-    required this.price,
+    this.price = 0,
     required this.owned,
     this.icon,
     this.imageAsset,
@@ -46,7 +47,7 @@ class ShopItem {
     return imageAsset;
   }
 
-  ShopItem copyWith({bool? owned, bool? equipped}) {
+  ShopItem copyWith({bool? owned, bool? equipped, int? price}) {
     return ShopItem(
       id: id,
       name: name,
@@ -55,7 +56,7 @@ class ShopItem {
       imageAsset: imageAsset,
       ownedImageAsset: ownedImageAsset,
       description: description,
-      price: price,
+      price: price ?? this.price,
       owned: owned ?? this.owned,
       statLabel: statLabel,
       statCurrent: statCurrent,
@@ -63,6 +64,39 @@ class ShopItem {
       equipped: equipped ?? this.equipped,
     );
   }
+}
+
+Widget _shopItemArt(
+  ShopItem item, {
+  required bool locked,
+  double iconSize = 36,
+}) {
+  const maroonGlow = Color(0xFFC41E1E);
+  if (item.category == ShopCategory.characters) {
+    final asset = item.ownedImageAsset ?? item.imageAsset;
+    if (asset == null) {
+      return Icon(
+        item.icon ?? Icons.help_outline,
+        size: iconSize,
+        color: maroonGlow,
+      );
+    }
+    if (locked) {
+      return LockedPortraitImage(asset: asset, fit: BoxFit.cover);
+    }
+    return Image.asset(asset, fit: BoxFit.cover);
+  }
+  if (item.displayImage == null) {
+    return Icon(
+      item.icon ?? Icons.help_outline,
+      size: iconSize,
+      color: locked ? Colors.white38 : maroonGlow.withValues(alpha: 0.85),
+    );
+  }
+  return Padding(
+    padding: const EdgeInsets.all(10),
+    child: Image.asset(item.displayImage!, fit: BoxFit.contain),
+  );
 }
 
 /// Shop / upgrades — tabbed catalog with purchase & equip bottom sheet.
@@ -86,7 +120,6 @@ class _ShopScreenState extends State<ShopScreen> {
       imageAsset: AppAssets.charWanderer,
       ownedImageAsset: AppAssets.charWanderer,
       description: 'Starting survivor. Balanced HP and speed.',
-      price: 0,
       owned: false,
       statLabel: 'Role',
       statCurrent: 'Starter',
@@ -99,7 +132,6 @@ class _ShopScreenState extends State<ShopScreen> {
       imageAsset: AppAssets.charHuntressLocked,
       ownedImageAsset: AppAssets.charHuntress,
       description: 'Faster scout. Lower HP, higher speed.',
-      price: 21000,
       owned: false,
       statLabel: 'Speed',
       statCurrent: 'High',
@@ -112,7 +144,6 @@ class _ShopScreenState extends State<ShopScreen> {
       imageAsset: AppAssets.charScholarLocked,
       ownedImageAsset: AppAssets.charScholar,
       description: 'Mystic fighter. Mid HP and speed.',
-      price: 25000,
       owned: false,
       statLabel: 'Power',
       statCurrent: '—',
@@ -125,7 +156,6 @@ class _ShopScreenState extends State<ShopScreen> {
       imageAsset: AppAssets.charBruteLocked,
       ownedImageAsset: AppAssets.charBrute,
       description: 'Tanky brawler. Highest HP, slower move.',
-      price: 32000,
       owned: false,
       statLabel: 'HP',
       statCurrent: '—',
@@ -138,7 +168,6 @@ class _ShopScreenState extends State<ShopScreen> {
       imageAsset: AppAssets.charGhostLocked,
       ownedImageAsset: AppAssets.charGhost,
       description: 'Elusive striker. Strong speed, mid HP.',
-      price: 40000,
       owned: false,
       statLabel: 'Speed',
       statCurrent: '—',
@@ -148,9 +177,8 @@ class _ShopScreenState extends State<ShopScreen> {
       id: 'blade',
       name: 'Rust Blade',
       category: ShopCategory.weapons,
-      imageAsset: AppAssets.iconEmbers,
+      imageAsset: AppAssets.iconWeaponBlade,
       description: WeaponCatalog.byId['blade']!.shopDescription,
-      price: 0,
       owned: false,
       statLabel: 'Damage',
       statCurrent: '+35%',
@@ -160,9 +188,8 @@ class _ShopScreenState extends State<ShopScreen> {
       id: 'pistol',
       name: 'Ember Pistol',
       category: ShopCategory.weapons,
-      imageAsset: AppAssets.iconEmbers,
+      imageAsset: AppAssets.iconWeaponPistol,
       description: WeaponCatalog.byId['pistol']!.shopDescription,
-      price: 0,
       owned: false,
       statLabel: 'Damage',
       statCurrent: 'Base',
@@ -172,9 +199,8 @@ class _ShopScreenState extends State<ShopScreen> {
       id: 'axe',
       name: 'Grave Axe',
       category: ShopCategory.weapons,
-      imageAsset: AppAssets.iconLock,
+      imageAsset: AppAssets.iconWeaponAxe,
       description: WeaponCatalog.byId['axe']!.shopDescription,
-      price: 21000,
       owned: false,
       statLabel: 'Damage',
       statCurrent: '+55%',
@@ -184,9 +210,8 @@ class _ShopScreenState extends State<ShopScreen> {
       id: 'staff',
       name: 'Void Staff',
       category: ShopCategory.weapons,
-      imageAsset: AppAssets.iconLock,
+      imageAsset: AppAssets.iconWeaponStaff,
       description: WeaponCatalog.byId['staff']!.shopDescription,
-      price: 24000,
       owned: false,
       statLabel: 'Fire rate',
       statCurrent: 'Fast',
@@ -196,9 +221,8 @@ class _ShopScreenState extends State<ShopScreen> {
       id: 'bow',
       name: 'Hollow Bow',
       category: ShopCategory.weapons,
-      imageAsset: AppAssets.iconLock,
+      imageAsset: AppAssets.iconWeaponBow,
       description: WeaponCatalog.byId['bow']!.shopDescription,
-      price: 28000,
       owned: false,
       statLabel: 'Range',
       statCurrent: 'Long',
@@ -208,9 +232,8 @@ class _ShopScreenState extends State<ShopScreen> {
       id: 'vein',
       name: 'Vein Rune',
       category: ShopCategory.runes,
-      imageAsset: AppAssets.iconHp,
+      imageAsset: AppAssets.iconRuneVein,
       description: RuneCatalog.byId['vein']!.shopDescription,
-      price: 21000,
       owned: false,
       statLabel: 'HP',
       statCurrent: '+18',
@@ -220,9 +243,8 @@ class _ShopScreenState extends State<ShopScreen> {
       id: 'gale',
       name: 'Gale Rune',
       category: ShopCategory.runes,
-      imageAsset: AppAssets.iconEmbers,
+      imageAsset: AppAssets.iconRuneGale,
       description: RuneCatalog.byId['gale']!.shopDescription,
-      price: 22000,
       owned: false,
       statLabel: 'Speed',
       statCurrent: '+18',
@@ -241,7 +263,15 @@ class _ShopScreenState extends State<ShopScreen> {
       ShopCategory.weapons => economy.equippedWeaponId == item.id,
       ShopCategory.runes => economy.equippedRuneIds.contains(item.id),
     };
-    return item.copyWith(owned: owned, equipped: equipped);
+    return item.copyWith(
+      owned: owned,
+      equipped: equipped,
+      price: switch (item.category) {
+        ShopCategory.characters => CharacterCatalog.costEmbers(item.id),
+        ShopCategory.weapons => WeaponCatalog.costEmbers(item.id),
+        ShopCategory.runes => RuneCatalog.costEmbers(item.id),
+      },
+    );
   }
 
   List<ShopItem> _filtered(EconomyState economy) => _catalog
@@ -562,20 +592,7 @@ class _ShopCardState extends State<_ShopCard>
                       ),
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: item.displayImage != null
-                        ? Image.asset(
-                            item.displayImage!,
-                            fit: item.category == ShopCategory.characters
-                                ? BoxFit.cover
-                                : BoxFit.contain,
-                          )
-                        : Icon(
-                            item.icon ?? Icons.help_outline,
-                            size: 36,
-                            color: locked
-                                ? Colors.white38
-                                : _maroonGlow.withValues(alpha: 0.85),
-                          ),
+                    child: _shopItemArt(item, locked: locked),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -611,26 +628,35 @@ class _ShopCardState extends State<_ShopCard>
               ],
             ),
             if (locked)
-              Positioned(
+              const Positioned(
                 top: 4,
                 right: 4,
-                child: Container(
-                  width: 20,
-                  height: 20,
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Image.asset(AppAssets.iconLock, fit: BoxFit.contain),
-                ),
+                child: _LockBadge(),
               ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _LockBadge extends StatelessWidget {
+  const _LockBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 16,
+      height: 16,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.72),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Image.asset(AppAssets.iconLock, fit: BoxFit.contain),
     );
   }
 }
@@ -692,33 +718,33 @@ class _ItemDetailSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _maroonGlow.withValues(alpha: 0.55)),
-              boxShadow: [
-                BoxShadow(
-                  color: _maroonGlow.withValues(alpha: 0.25),
-                  blurRadius: 16,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _maroonGlow.withValues(alpha: 0.55)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _maroonGlow.withValues(alpha: 0.25),
+                      blurRadius: 16,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: item.displayImage != null
-                ? Image.asset(
-                    item.displayImage!,
-                    fit: item.category == ShopCategory.characters
-                        ? BoxFit.cover
-                        : BoxFit.contain,
-                  )
-                : Icon(
-                    item.icon ?? Icons.help_outline,
-                    size: 44,
-                    color: _maroonGlow,
-                  ),
+                clipBehavior: Clip.antiAlias,
+                child: _shopItemArt(item, locked: !item.owned, iconSize: 44),
+              ),
+              if (!item.owned)
+                const Positioned(
+                  top: 4,
+                  right: 4,
+                  child: _LockBadge(),
+                ),
+            ],
           ),
           const SizedBox(height: 16),
           Text(

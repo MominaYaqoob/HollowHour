@@ -23,10 +23,13 @@ class AudioManager {
   static const _levelUp = 'audio/sfx_levelup.mp3';
   static const _tap = 'audio/sfx_tap.mp3';
   static const _purchase = 'audio/sfx_purchase.mp3';
+  static const _heartbeat = 'audio/sfx_heartbeat.wav';
 
   static const int _sfxPoolSize = 4;
 
   AudioPlayer? _music;
+  AudioPlayer? _heartbeatPlayer;
+  bool _heartbeatPlaying = false;
   final List<AudioPlayer> _sfxPool = [];
   int _sfxCursor = 0;
   bool _initialized = false;
@@ -120,6 +123,9 @@ class AudioManager {
       await prefs.setBool(_sfxKey, enabled);
     } catch (e) {
       debugPrint('AudioManager.setSfxEnabled prefs failed: $e');
+    }
+    if (!enabled) {
+      await stopHeartbeat();
     }
   }
 
@@ -253,7 +259,11 @@ class AudioManager {
     }
   }
 
-  void playFire() => _playSfx(_fire);
+  void playFire() {
+    _hapticLight();
+    _playSfx(_fire);
+  }
+
   void playHit() => _playSfx(_hit);
 
   void playEnemyDeath() {
@@ -262,8 +272,51 @@ class AudioManager {
   }
 
   void playDamage() {
-    _hapticMedium();
+    _hapticLight();
     _playSfx(_damage);
+  }
+
+  /// Looping low-volume heartbeat while HP is critical. No-ops if SFX are off.
+  Future<void> startHeartbeat() async {
+    if (_heartbeatPlaying) return;
+    if (!_initialized) await init();
+    if (!sfxEnabled) return;
+    if (_heartbeatPlaying) return;
+    _heartbeatPlaying = true;
+    try {
+      final player = _heartbeatPlayer ??= AudioPlayer();
+      await player.setPlayerMode(PlayerMode.mediaPlayer);
+      await player.setReleaseMode(ReleaseMode.loop);
+      await player.setVolume(0.28);
+      try {
+        await player.setAudioContext(
+          AudioContext(
+            android: const AudioContextAndroid(
+              contentType: AndroidContentType.sonification,
+              usageType: AndroidUsageType.game,
+              audioFocus: AndroidAudioFocus.none,
+            ),
+          ),
+        );
+      } catch (_) {}
+      await player.stop();
+      await player.play(AssetSource(_heartbeat));
+      if (!_heartbeatPlaying) {
+        await player.stop();
+      }
+    } catch (e) {
+      debugPrint('AudioManager.startHeartbeat failed: $e');
+      _heartbeatPlaying = false;
+    }
+  }
+
+  Future<void> stopHeartbeat() async {
+    _heartbeatPlaying = false;
+    try {
+      await _heartbeatPlayer?.stop();
+    } catch (e) {
+      debugPrint('AudioManager.stopHeartbeat failed: $e');
+    }
   }
 
   void playPickup() => _playSfx(_pickup);
@@ -287,13 +340,6 @@ class AudioManager {
     if (!vibrationEnabled) return;
     try {
       HapticFeedback.lightImpact();
-    } catch (_) {}
-  }
-
-  void _hapticMedium() {
-    if (!vibrationEnabled) return;
-    try {
-      HapticFeedback.mediumImpact();
     } catch (_) {}
   }
 

@@ -143,3 +143,43 @@ class ThemedBackButton extends StatelessWidget {
     );
   }
 }
+
+/// Locked character art: lift crushed shadows + light outline so the silhouette stays readable.
+class LockedPortraitImage extends StatelessWidget {
+  const LockedPortraitImage({
+    super.key,
+    required this.asset,
+    this.fit = BoxFit.cover,
+  });
+
+  final String asset;
+  final BoxFit fit;
+
+  static const ColorFilter liftShadows = ColorFilter.matrix(<double>[
+    1.22, 0.05, 0.02, 0, 30,
+    0.04, 1.20, 0.03, 0, 28,
+    0.02, 0.04, 1.18, 0, 26,
+    0, 0, 0, 1, 0,
+  ]);
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.25),
+          width: 1,
+        ),
+      ),
+      child: ColorFiltered(
+        colorFilter: liftShadows,
+        child: Image.asset(
+          asset,
+          fit: fit,
+          width: double.infinity,
+          height: double.infinity,
+        ),
+      ),
+    );
+  }
+}

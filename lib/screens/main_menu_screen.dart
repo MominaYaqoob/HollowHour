@@ -211,7 +211,7 @@ class _MainMenuScreenState extends State<MainMenuScreen>
           // UI chrome.
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
               child: Column(
                 children: [
                   AnimatedBuilder(

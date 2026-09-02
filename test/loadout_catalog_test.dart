@@ -24,4 +24,15 @@ void main() {
     expect(both.moveSpeed, 18);
     expect(both.damage, 0);
   });
+
+  test('ember costs are shared across catalogs on the rebalanced curve', () {
+    expect(WeaponCatalog.costEmbers('pistol'), 0);
+    expect(WeaponCatalog.costEmbers('blade'), 500);
+    expect(WeaponCatalog.costEmbers('axe'), 1500);
+    expect(WeaponCatalog.costEmbers('staff'), 2500);
+    expect(WeaponCatalog.costEmbers('bow'), 3500);
+
+    expect(RuneCatalog.costEmbers('vein'), 500);
+    expect(RuneCatalog.costEmbers('gale'), 1500);
+  });
 }

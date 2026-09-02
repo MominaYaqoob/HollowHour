@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../ads/ad_manager.dart';
+import '../connectivity/network_link.dart';
 import '../theme/field_backdrop.dart';
 import '../theme/maroon_loader.dart';
 import 'gameplay_hud_screen.dart';
@@ -14,6 +18,8 @@ class GameOverScreen extends StatefulWidget {
     this.levelReached = 1,
     this.stageLevel = 1,
     this.headline = 'The Hollow Claims You',
+    this.canRevive = false,
+    this.onRevive,
     this.onConfirmLeave,
   });
 
@@ -23,6 +29,12 @@ class GameOverScreen extends StatefulWidget {
   final int levelReached;
   final int stageLevel;
   final String headline;
+
+  /// First death this run — Watch Ad to Revive is offered once.
+  final bool canRevive;
+
+  /// Resume the live match under this route (50% HP). Caller pops after.
+  final VoidCallback? onRevive;
 
   /// Called once when leaving via Retry / Main Menu (e.g. award pending embers).
   final VoidCallback? onConfirmLeave;
@@ -49,6 +61,7 @@ class _GameOverScreenState extends State<GameOverScreen>
 
   bool _busy = false;
   bool _leaveConfirmed = false;
+  bool _offerRevive = false;
 
   @override
   void initState() {
@@ -104,6 +117,14 @@ class _GameOverScreenState extends State<GameOverScreen>
       if (!mounted) return;
       _statsController.forward();
     });
+    unawaited(_resolveReviveOffer());
+  }
+
+  Future<void> _resolveReviveOffer() async {
+    if (!widget.canRevive || widget.onRevive == null) return;
+    final online = await NetworkLink.isOnline();
+    if (!mounted) return;
+    setState(() => _offerRevive = online);
   }
 
   @override
@@ -123,6 +144,7 @@ class _GameOverScreenState extends State<GameOverScreen>
   Future<void> _retry() async {
     if (_busy) return;
     setState(() => _busy = true);
+    await AdManager.instance.showInterstitialIfReady();
     _confirmLeaveOnce();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -141,9 +163,28 @@ class _GameOverScreenState extends State<GameOverScreen>
   Future<void> _mainMenu() async {
     if (_busy) return;
     setState(() => _busy = true);
+    await AdManager.instance.showInterstitialIfReady();
     _confirmLeaveOnce();
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  Future<void> _watchRevive() async {
+    if (_busy || !widget.canRevive || widget.onRevive == null) return;
+    setState(() => _busy = true);
+    var earned = false;
+    await AdManager.instance.showRewardedIfReady(
+      onUserEarnedReward: () {
+        earned = true;
+        widget.onRevive!();
+      },
+    );
+    if (!mounted) return;
+    if (earned) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _busy = false);
   }
 
   @override
@@ -257,9 +298,17 @@ class _GameOverScreenState extends State<GameOverScreen>
                     },
                   ),
                   const Spacer(flex: 3),
+                  if (_offerRevive) ...[
+                    _GlowButton(
+                      label: 'Watch Ad to Revive',
+                      primary: true,
+                      onTap: _watchRevive,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   _GlowButton(
                     label: 'Retry',
-                    primary: true,
+                    primary: !_offerRevive,
                     onTap: _retry,
                   ),
                   const SizedBox(height: 12),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import '../connectivity/network_link.dart';
+
 /// Template size for [NativeAdWidget] / Android factory layouts.
 enum NativeAdFormat { small, medium }
 
@@ -60,6 +62,19 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
     if (_loading) return;
     _loading = true;
     try {
+      if (!await NetworkLink.isOnline()) {
+        debugPrint('NativeAd load skipped: offline');
+        if (mounted) {
+          setState(() {
+            _nativeAd = null;
+            _isLoaded = false;
+            _loading = false;
+          });
+        } else {
+          _loading = false;
+        }
+        return;
+      }
       final ensure = widget.ensureInitialized;
       if (ensure != null) {
         await ensure();

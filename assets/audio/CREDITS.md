@@ -17,6 +17,7 @@ License overview: https://mixkit.co/license/
 | `sfx_levelup.mp3` | [Mixkit SFX](https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3) | 270 | Magic / win-style chime | Mixkit Sound Effects Free License |
 | `sfx_tap.mp3` | [Mixkit SFX](https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3) | 2568 | UI click | Mixkit Sound Effects Free License |
 | `sfx_purchase.mp3` | [Mixkit SFX](https://assets.mixkit.co/active_storage/sfx/269/269-preview.mp3) | 269 | Short success / confirm chime | Mixkit Sound Effects Free License |
+| `sfx_heartbeat.wav` | Original (generated lub-dub loop) | — | Low-volume critical-HP heartbeat (~0.8s loop) | Original / Hollow Hour |
 
 ## Gaps
 
