@@ -66,8 +66,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<!-- Google AdMob TEST App ID — replace before production. -->
+	<!-- Google AdMob App ID (Hollow Hour production). -->
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<string>ca-app-pub-3463774223212169~1708184907</string>
 </dict>
 </plist>

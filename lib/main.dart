@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio/audio_manager.dart';
 import 'prefs/app_flags.dart';
@@ -15,29 +14,13 @@ import 'screens/splash_screen.dart';
 import 'state/economy_state.dart';
 import 'theme/maroon_loader.dart';
 
-/// Bump with [pubspec] version so each new APK starts a clean save (not resume).
-const _installStamp = '1.0.0+2';
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  await _ensureFreshInstallIfNeeded();
   await AudioManager.instance.init();
   await DisplaySettings.instance.load();
   // Ads start only after agree / onboarding (see SplashScreen).
   runApp(const HollowHourApp());
-}
-
-Future<void> _ensureFreshInstallIfNeeded() async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getString('app_install_stamp') != _installStamp) {
-      await prefs.clear();
-      await prefs.setString('app_install_stamp', _installStamp);
-    }
-  } catch (e, st) {
-    debugPrint('Fresh-install check failed: $e\n$st');
-  }
 }
 
 class HollowHourApp extends StatelessWidget {

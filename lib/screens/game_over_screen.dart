@@ -118,6 +118,9 @@ class _GameOverScreenState extends State<GameOverScreen>
       _statsController.forward();
     });
     unawaited(_resolveReviveOffer());
+    if (widget.canRevive) {
+      unawaited(AdManager.instance.preloadRewarded());
+    }
   }
 
   Future<void> _resolveReviveOffer() async {
@@ -173,7 +176,18 @@ class _GameOverScreenState extends State<GameOverScreen>
     if (_busy || !widget.canRevive || widget.onRevive == null) return;
     setState(() => _busy = true);
     var earned = false;
-    await AdManager.instance.showRewardedIfReady(
+    final ready = await AdManager.instance.preloadRewarded(
+      timeout: const Duration(seconds: 7),
+    );
+    if (!mounted) return;
+    if (!ready) {
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ad not available, try again later')),
+      );
+      return;
+    }
+    final shown = await AdManager.instance.showRewardedIfReady(
       onUserEarnedReward: () {
         earned = true;
         widget.onRevive!();
@@ -185,6 +199,11 @@ class _GameOverScreenState extends State<GameOverScreen>
       return;
     }
     setState(() => _busy = false);
+    if (!shown) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ad not available, try again later')),
+      );
+    }
   }
 
   @override

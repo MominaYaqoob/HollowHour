@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -9,6 +11,7 @@ enum NativeAdFormat { small, medium }
 /// Custom-styled AdMob native ad (factoryId: `hollow_native`).
 ///
 /// Renders nothing until loaded — no placeholder gap.
+/// Loads only while the widget is actually visible ([TickerMode] enabled).
 class NativeAdWidget extends StatefulWidget {
   const NativeAdWidget({
     super.key,
@@ -34,28 +37,30 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
   bool _isLoaded = false;
   Brightness? _appliedBrightness;
   bool _loading = false;
+  bool _loadScheduled = false;
 
   bool get _isMedium => widget.format == NativeAdFormat.medium;
-
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final brightness = Theme.of(context).brightness;
-    if (_appliedBrightness == null) {
-      _appliedBrightness = brightness;
-      _loadAd(brightness);
-      return;
-    }
-    if (_appliedBrightness != brightness) {
+    if (_appliedBrightness != null && _appliedBrightness != brightness) {
       _appliedBrightness = brightness;
       _disposeAd();
-      _loadAd(brightness);
+      _maybeLoadIfVisible();
+      return;
     }
+    _appliedBrightness ??= brightness;
+    _maybeLoadIfVisible();
+  }
+
+  void _maybeLoadIfVisible() {
+    if (!mounted) return;
+    if (!TickerMode.valuesOf(context).enabled) return;
+    if (_loading || _isLoaded || _nativeAd != null) return;
+    final brightness = _appliedBrightness ?? Theme.of(context).brightness;
+    unawaited(_loadAd(brightness));
   }
 
   Future<void> _loadAd(Brightness brightness) async {
@@ -80,6 +85,10 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
         await ensure();
       }
       if (!mounted) return;
+      if (!TickerMode.valuesOf(context).enabled) {
+        _loading = false;
+        return;
+      }
 
       final ad = NativeAd(
         adUnitId: widget.adUnitId,
@@ -135,6 +144,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
     _nativeAd = null;
     _isLoaded = false;
     _loading = false;
+    _loadScheduled = false;
   }
 
   @override
@@ -145,6 +155,17 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final visible = TickerMode.valuesOf(context).enabled;
+    if (visible && !_loading && !_isLoaded && _nativeAd == null) {
+      if (!_loadScheduled) {
+        _loadScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _loadScheduled = false;
+          if (mounted) _maybeLoadIfVisible();
+        });
+      }
+    }
+
     if (!_isLoaded || _nativeAd == null) {
       return const SizedBox.shrink();
     }

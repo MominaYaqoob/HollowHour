@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -31,23 +32,53 @@ class AdManager with WidgetsBindingObserver {
   static const String testRewardedAdUnitId =
       'ca-app-pub-3940256099942544/5224354917';
 
+  static const String prodNativeAdUnitId =
+      'ca-app-pub-3463774223212169/7782638668';
+  static const String prodAppOpenAdUnitId =
+      'ca-app-pub-3463774223212169/9722406294';
+  static const String prodInterstitialAdUnitId =
+      'ca-app-pub-3463774223212169/9973602018';
+  static const String prodRewardedAdUnitId =
+      'ca-app-pub-3463774223212169/7096242958';
+
+  static String get nativeAdUnitId =>
+      kDebugMode ? testNativeAdUnitId : prodNativeAdUnitId;
+  static String get appOpenAdUnitId =>
+      kDebugMode ? testAppOpenAdUnitId : prodAppOpenAdUnitId;
+  static String get interstitialAdUnitId =>
+      kDebugMode ? testInterstitialAdUnitId : prodInterstitialAdUnitId;
+  static String get rewardedAdUnitId =>
+      kDebugMode ? testRewardedAdUnitId : prodRewardedAdUnitId;
+
   // Production values — safe balance: not shown on trivial quick app-switches
-  // (5s minimum background), not shown too frequently to risk AdMob's
-  // disruptive-ads guidance (45s cooldown). Do not lower below 5s/30s
-  // without reviewing AdMob's App Open ad best practices again.
+  // (5s minimum background), 3-minute cooldown between App Open shows.
   static const _minBackground = Duration(seconds: 5);
-  static const _minCooldown = Duration(seconds: 45);
+  static const _minCooldown = Duration(minutes: 3);
+  static const _appOpenMaxAge = Duration(hours: 3, minutes: 50);
+  static const _interstitialMaxAge = Duration(minutes: 55);
 
   Future<void>? _initFuture;
 
+  bool _gameplayActive = false;
+
   /// True while [GameplayHudScreen] is mounted — blocks App Open.
-  bool gameplayActive = false;
+  /// Setting true preloads an interstitial for the upcoming results screen.
+  bool get gameplayActive => _gameplayActive;
+  set gameplayActive(bool value) {
+    _gameplayActive = value;
+    if (value) {
+      unawaited(loadInterstitial());
+    }
+  }
 
   /// False on the device's first-ever session after setting [AppFlags.hasLaunchedBefore].
   bool _allowAppOpenThisSession = false;
 
   DateTime? _pausedAt;
   DateTime? _lastShownAt;
+  DateTime? _appOpenLoadedAt;
+  DateTime? _interstitialLoadedAt;
+
   AppOpenAd? _appOpenAd;
   bool _isShowingAppOpen = false;
   bool _isLoadingAppOpen = false;
@@ -59,6 +90,7 @@ class AdManager with WidgetsBindingObserver {
   RewardedAd? _rewardedAd;
   bool _isLoadingRewarded = false;
   bool _isShowingRewarded = false;
+  Completer<bool>? _rewardedLoadWaiter;
 
   bool _lifecycleAttached = false;
 
@@ -101,9 +133,8 @@ class AdManager with WidgetsBindingObserver {
     }
 
     _attachLifecycle();
+    // Only App Open at bootstrap — interstitial/rewarded load when needed.
     unawaited(_loadAppOpenAd());
-    unawaited(loadInterstitial());
-    unawaited(loadRewarded());
   }
 
   Future<bool> _hasNetworkForAds() async {
@@ -129,6 +160,25 @@ class AdManager with WidgetsBindingObserver {
       },
     );
     await done.future;
+  }
+
+  Future<bool> isPrivacyOptionsRequired() async {
+    try {
+      final status =
+          await ConsentInformation.instance.getPrivacyOptionsRequirementStatus();
+      return status == PrivacyOptionsRequirementStatus.required;
+    } catch (e, st) {
+      debugPrint('AdManager isPrivacyOptionsRequired failed: $e\n$st');
+      return false;
+    }
+  }
+
+  Future<void> showPrivacyOptions() async {
+    try {
+      await ConsentForm.showPrivacyOptionsForm((_) {});
+    } catch (e, st) {
+      debugPrint('AdManager showPrivacyOptions failed: $e\n$st');
+    }
   }
 
   void _attachLifecycle() {
@@ -167,23 +217,39 @@ class AdManager with WidgetsBindingObserver {
     await _showAppOpenAd();
   }
 
+  void _discardStaleAppOpen() {
+    final loadedAt = _appOpenLoadedAt;
+    final ad = _appOpenAd;
+    if (ad == null || loadedAt == null) return;
+    if (DateTime.now().difference(loadedAt) <= _appOpenMaxAge) return;
+    debugPrint('App Open discarded — older than $_appOpenMaxAge');
+    try {
+      ad.dispose();
+    } catch (_) {}
+    _appOpenAd = null;
+    _appOpenLoadedAt = null;
+  }
+
   Future<void> _loadAppOpenAd() async {
+    _discardStaleAppOpen();
     if (_isLoadingAppOpen || _appOpenAd != null) return;
     if (!await _hasNetworkForAds()) return;
     _isLoadingAppOpen = true;
     try {
       await AppOpenAd.load(
-        adUnitId: testAppOpenAdUnitId,
+        adUnitId: appOpenAdUnitId,
         request: const AdRequest(),
         adLoadCallback: AppOpenAdLoadCallback(
           onAdLoaded: (ad) {
             _appOpenAd = ad;
+            _appOpenLoadedAt = DateTime.now();
             _isLoadingAppOpen = false;
             debugPrint('App Open ad loaded');
           },
           onAdFailedToLoad: (error) {
             _isLoadingAppOpen = false;
             _appOpenAd = null;
+            _appOpenLoadedAt = null;
             debugPrint('App Open failed to load: $error');
           },
         ),
@@ -195,6 +261,7 @@ class AdManager with WidgetsBindingObserver {
   }
 
   Future<void> _showAppOpenAd() async {
+    _discardStaleAppOpen();
     final ad = _appOpenAd;
     if (ad == null || _isShowingAppOpen || gameplayActive) {
       if (ad == null) unawaited(_loadAppOpenAd());
@@ -209,6 +276,7 @@ class AdManager with WidgetsBindingObserver {
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
         _appOpenAd = null;
+        _appOpenLoadedAt = null;
         _isShowingAppOpen = false;
         _lastShownAt = DateTime.now();
         SystemChrome.setSystemUIOverlayStyle(
@@ -225,6 +293,7 @@ class AdManager with WidgetsBindingObserver {
         debugPrint('App Open failed to show: $error');
         ad.dispose();
         _appOpenAd = null;
+        _appOpenLoadedAt = null;
         _isShowingAppOpen = false;
         SystemChrome.setSystemUIOverlayStyle(
           const SystemUiOverlayStyle(
@@ -252,29 +321,46 @@ class AdManager with WidgetsBindingObserver {
       debugPrint('App Open show exception: $e\n$st');
       ad.dispose();
       _appOpenAd = null;
+      _appOpenLoadedAt = null;
       _isShowingAppOpen = false;
       unawaited(restoreSystemUiAfterAd());
       unawaited(_loadAppOpenAd());
     }
   }
 
+  void _discardStaleInterstitial() {
+    final loadedAt = _interstitialLoadedAt;
+    final ad = _interstitialAd;
+    if (ad == null || loadedAt == null) return;
+    if (DateTime.now().difference(loadedAt) <= _interstitialMaxAge) return;
+    debugPrint('Interstitial discarded — older than $_interstitialMaxAge');
+    try {
+      ad.dispose();
+    } catch (_) {}
+    _interstitialAd = null;
+    _interstitialLoadedAt = null;
+  }
+
   Future<void> loadInterstitial() async {
+    _discardStaleInterstitial();
     if (_isLoadingInterstitial || _interstitialAd != null) return;
     if (!await _hasNetworkForAds()) return;
     _isLoadingInterstitial = true;
     try {
       await InterstitialAd.load(
-        adUnitId: testInterstitialAdUnitId,
+        adUnitId: interstitialAdUnitId,
         request: const AdRequest(),
         adLoadCallback: InterstitialAdLoadCallback(
           onAdLoaded: (ad) {
             _interstitialAd = ad;
+            _interstitialLoadedAt = DateTime.now();
             _isLoadingInterstitial = false;
             debugPrint('Interstitial ad loaded');
           },
           onAdFailedToLoad: (error) {
             _isLoadingInterstitial = false;
             _interstitialAd = null;
+            _interstitialLoadedAt = null;
             debugPrint('Interstitial failed to load: $error');
           },
         ),
@@ -286,15 +372,17 @@ class AdManager with WidgetsBindingObserver {
   }
 
   /// Shows a cached interstitial if one is ready. Never blocks on a load.
+  /// Does not preload the next interstitial — that happens at gameplay start.
   Future<void> showInterstitialIfReady() async {
+    _discardStaleInterstitial();
     final ad = _interstitialAd;
     if (ad == null || _isShowingInterstitial) {
-      if (ad == null) unawaited(loadInterstitial());
       return;
     }
 
     _isShowingInterstitial = true;
     _interstitialAd = null;
+    _interstitialLoadedAt = null;
     final done = Completer<void>();
 
     void finish(InterstitialAd closing) {
@@ -305,7 +393,6 @@ class AdManager with WidgetsBindingObserver {
       }
       _isShowingInterstitial = false;
       unawaited(restoreSystemUiAfterAd());
-      unawaited(loadInterstitial());
       if (!done.isCompleted) done.complete();
     }
 
@@ -337,46 +424,78 @@ class AdManager with WidgetsBindingObserver {
     }
   }
 
-  Future<void> loadRewarded() async {
-    if (_isLoadingRewarded || _rewardedAd != null) return;
-    if (!await _hasNetworkForAds()) return;
+  Future<void> _loadRewardedImpl() async {
+    if (_isLoadingRewarded || _rewardedAd != null) {
+      _rewardedLoadWaiter?.complete(_rewardedAd != null);
+      _rewardedLoadWaiter = null;
+      return;
+    }
+    if (!await _hasNetworkForAds()) {
+      _rewardedLoadWaiter?.complete(false);
+      _rewardedLoadWaiter = null;
+      return;
+    }
     _isLoadingRewarded = true;
     try {
       await RewardedAd.load(
-        adUnitId: testRewardedAdUnitId,
+        adUnitId: rewardedAdUnitId,
         request: const AdRequest(),
         rewardedAdLoadCallback: RewardedAdLoadCallback(
           onAdLoaded: (ad) {
             _rewardedAd = ad;
             _isLoadingRewarded = false;
             debugPrint('Rewarded ad loaded');
+            _rewardedLoadWaiter?.complete(true);
+            _rewardedLoadWaiter = null;
           },
           onAdFailedToLoad: (error) {
             _isLoadingRewarded = false;
             _rewardedAd = null;
             debugPrint('Rewarded failed to load: $error');
+            _rewardedLoadWaiter?.complete(false);
+            _rewardedLoadWaiter = null;
           },
         ),
       );
     } catch (e, st) {
       _isLoadingRewarded = false;
       debugPrint('Rewarded load exception: $e\n$st');
+      _rewardedLoadWaiter?.complete(false);
+      _rewardedLoadWaiter = null;
+    }
+  }
+
+  /// Preload a rewarded ad (e.g. when Game Over opens). Awaits load or timeout.
+  Future<bool> preloadRewarded({
+    Duration timeout = const Duration(seconds: 7),
+  }) async {
+    if (_rewardedAd != null) return true;
+    _rewardedLoadWaiter ??= Completer<bool>();
+    if (!_isLoadingRewarded) {
+      unawaited(_loadRewardedImpl());
+    }
+    try {
+      return await _rewardedLoadWaiter!.future.timeout(timeout);
+    } on TimeoutException {
+      debugPrint('Rewarded preload timed out after $timeout');
+      return _rewardedAd != null;
     }
   }
 
   /// Shows a cached rewarded ad if ready. Returns false immediately when none.
+  /// Does not auto-reload after dismiss — call [preloadRewarded] when needed.
   Future<bool> showRewardedIfReady({
     required void Function() onUserEarnedReward,
   }) async {
     final ad = _rewardedAd;
     if (ad == null || _isShowingRewarded) {
-      if (ad == null) unawaited(loadRewarded());
       return false;
     }
 
     _isShowingRewarded = true;
     _rewardedAd = null;
     final done = Completer<void>();
+    var earned = false;
 
     void finish(RewardedAd closing) {
       try {
@@ -386,7 +505,6 @@ class AdManager with WidgetsBindingObserver {
       }
       _isShowingRewarded = false;
       unawaited(restoreSystemUiAfterAd());
-      unawaited(loadRewarded());
       if (!done.isCompleted) done.complete();
     }
 
@@ -413,15 +531,17 @@ class AdManager with WidgetsBindingObserver {
       await ad.show(
         onUserEarnedReward: (rewardAd, reward) {
           debugPrint('Rewarded earned: ${reward.amount} ${reward.type}');
+          earned = true;
           onUserEarnedReward();
         },
       );
       await done.future.timeout(const Duration(seconds: 60));
+      // true = ad was presented; reward only via [onUserEarnedReward].
       return true;
     } catch (e, st) {
       debugPrint('Rewarded show exception: $e\n$st');
       if (!done.isCompleted) finish(ad);
-      return false;
+      return earned;
     }
   }
 

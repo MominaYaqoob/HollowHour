@@ -13,6 +13,17 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+fun releaseKeystoreReady(): Boolean {
+    val storePath = keystoreProperties.getProperty("storeFile")
+    val store = storePath?.let { rootProject.file(it) }
+    return keystorePropertiesFile.exists() &&
+        !keystoreProperties.getProperty("keyAlias").isNullOrBlank() &&
+        !keystoreProperties.getProperty("keyPassword").isNullOrBlank() &&
+        !keystoreProperties.getProperty("storePassword").isNullOrBlank() &&
+        store != null &&
+        store.isFile
+}
+
 android {
     namespace = "com.sid.hollow.hour.com"
     compileSdk = flutter.compileSdkVersion
@@ -37,20 +48,24 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String?
-            keyPassword = keystoreProperties["keyPassword"] as String?
-            storeFile = keystoreProperties["storeFile"]?.let { rootProject.file(it as String) }
-            storePassword = keystoreProperties["storePassword"] as String?
+            if (releaseKeystoreReady()) {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            // Never silently sign Play/release artifacts with the debug keystore.
+            check(releaseKeystoreReady()) {
+                "Release signing is missing. Copy android/key.properties.example to " +
+                    "android/key.properties and set storeFile to your .jks " +
+                    "(see README Release signing). Debug-key fallback is disabled."
             }
+            signingConfig = signingConfigs.getByName("release")
             // Keep AdMob classes if R8 runs; shrinking off avoids known VerifyError crashes.
             isMinifyEnabled = false
             isShrinkResources = false
@@ -70,4 +85,18 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+gradle.taskGraph.whenReady {
+    val releaseBuild = allTasks.any {
+        it.name.contains("Release", ignoreCase = true) &&
+            (it.name.startsWith("bundle") ||
+                it.name.startsWith("assemble") ||
+                it.name.startsWith("package"))
+    }
+    if (releaseBuild && !keystorePropertiesFile.exists()) {
+        throw GradleException(
+            "key.properties missing - refusing to build a release with the debug key",
+        )
+    }
 }

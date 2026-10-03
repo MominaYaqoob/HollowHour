@@ -272,7 +272,7 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
                   ),
                   const Spacer(),
                   NativeAdWidget(
-                    adUnitId: AdManager.testNativeAdUnitId,
+                    adUnitId: AdManager.nativeAdUnitId,
                     height: 168,
                     format: NativeAdFormat.small,
                     ensureInitialized: AdManager.instance.ensureInitialized,

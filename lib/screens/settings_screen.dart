@@ -25,6 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _music;
   late bool _vibration;
   late double _brightness;
+  bool _privacyOptionsRequired = false;
 
   @override
   void initState() {
@@ -34,6 +35,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _music = audio.musicEnabled;
     _vibration = audio.vibrationEnabled;
     _brightness = DisplaySettings.instance.brightness;
+    _resolvePrivacyOptions();
+  }
+
+  Future<void> _resolvePrivacyOptions() async {
+    final required = await AdManager.instance.isPrivacyOptionsRequired();
+    if (!mounted) return;
+    setState(() => _privacyOptionsRequired = required);
+  }
+
+  Future<void> _openPrivacyOptions() async {
+    AudioManager.instance.playTap();
+    await AdManager.instance.showPrivacyOptions();
   }
 
   Future<void> _confirmReset() async {
@@ -204,13 +217,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             label: 'Privacy Policy',
             onTap: _openPrivacyPolicy,
           ),
+          if (_privacyOptionsRequired)
+            _NavRow(
+              label: 'Privacy options',
+              onTap: _openPrivacyOptions,
+            ),
           _NavRow(
             label: 'Rate Us',
             onTap: _rateUs,
           ),
           const SizedBox(height: 16),
           NativeAdWidget(
-            adUnitId: AdManager.testNativeAdUnitId,
+            adUnitId: AdManager.nativeAdUnitId,
             height: 320,
             format: NativeAdFormat.medium,
             ensureInitialized: AdManager.instance.ensureInitialized,
