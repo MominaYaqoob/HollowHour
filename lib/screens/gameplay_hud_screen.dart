@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../ads/ad_manager.dart';
 import '../audio/audio_manager.dart';
 import '../game/aim_fire_controller.dart';
+import '../game/character_catalog.dart';
 import '../game/game_loop.dart';
 import '../game/game_mode.dart';
 import '../game/game_state.dart';
@@ -49,7 +50,7 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
   static const Color _maroon = Color(0xFF8B1A1A);
   static const Color _maroonGlow = Color(0xFFC41E1E);
 
-  static const int _hpSegments = 6;
+  static const int _hpSegments = 3;
 
   late final AnimationController _damagedFlashController;
   late final AnimationController _pickupController;
@@ -207,26 +208,45 @@ class _GameplayHudScreenState extends State<GameplayHudScreen>
 
     final economy = context.read<EconomyState>();
     final characterId = economy.equippedCharacterId ?? 'wanderer';
+    final character = CharacterCatalog.byId[characterId] ??
+        CharacterCatalog.byId['wanderer']!;
     final stage = widget.stageLevel.clamp(1, 30);
     final weapon = WeaponCatalog.forId(economy.equippedWeaponId);
     final runes = RuneCatalog.combined(economy.equippedRuneIds);
     final talentDamage = 12 + economy.talentLevel('damage') * 2.0;
+    // Luck + Emberheart: +8% / +10% XP & embers per talent level (tree copy).
+    final luckBonus =
+        economy.talentLevel('luck') * 0.08 +
+        economy.talentLevel('emberheart') * 0.10;
+    // Warding: −4% damage taken per level.
+    final wardingMul =
+        (1.0 - economy.talentLevel('warding') * 0.04).clamp(0.5, 1.0);
+    // Catalog speed is a 1–20 style rating; Wanderer (8) = baseline move speed.
+    final characterSpeedBonus = (character.speed - 8) * 5.0;
     _gameState = GameState(
       hollowDepth: stageDepthForLevel(stage),
       enemyStatScale: stageEnemyStatScale(stage),
       gameMode: GameMode.standard,
       matchDuration: stageDurationForLevel(stage),
       playerCharacterId: characterId,
-      startingMaxHp:
-          100 + economy.talentLevel('maxhp') * 8 + runes.maxHp,
-      startingMoveSpeed:
-          175 + economy.talentLevel('speed') * 10.0 + runes.moveSpeed,
+      playerWeaponId: weapon.id,
+      // Catalog HP is a rating; combat uses a tighter pool for the 3-pip bar.
+      startingMaxHp: character.hp * 0.5 +
+          economy.talentLevel('maxhp') * 8 +
+          runes.maxHp,
+      startingMoveSpeed: 175 +
+          characterSpeedBonus +
+          economy.talentLevel('speed') * 10.0 +
+          runes.moveSpeed,
       startingDamage: (talentDamage + runes.damage) * weapon.damageMul,
       startingFireCooldown: 0.38 * weapon.fireCooldownMul,
       startingProjectileSpeed: 420 * weapon.projectileSpeedMul,
       startingProjectileRadius: 5 * weapon.projectileRadiusMul,
       startingAimRangeRadius:
           AimFireController.rangeIndicatorRadius * weapon.aimRangeMul,
+      xpGainMul: 1.0 + luckBonus,
+      emberGainMul: 1.0 + luckBonus,
+      damageTakenMul: wardingMul,
     );
     _gameState.addListener(_onGameStateChanged);
 
@@ -1551,10 +1571,16 @@ class _ArenaPainter extends CustomPainter {
     // Obstacles in front of the player (occlusion).
     _paintObstacles(canvas, onlyIf: (o) => o.position.dy >= playerY);
 
-    // Projectiles
-    final shotPaint = Paint()..color = const Color(0xFFFFE08A);
+    // Projectiles — tint/size per equipped weapon (radius already weapon-scaled).
+    final shotColor = _projectileColorFor(state.playerWeaponId);
+    final glowPaint = Paint()..color = shotColor.withValues(alpha: 0.28);
+    final shotPaint = Paint()..color = shotColor;
+    final corePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.55);
     for (final p in state.projectiles) {
+      canvas.drawCircle(p.position, p.radius * 1.7, glowPaint);
       canvas.drawCircle(p.position, p.radius, shotPaint);
+      canvas.drawCircle(p.position, p.radius * 0.35, corePaint);
     }
 
     canvas.restore();
@@ -1829,6 +1855,17 @@ class _ArenaPainter extends CustomPainter {
     final paint = Paint()..filterQuality = FilterQuality.none;
     canvas.drawImageRect(sheet, src, dst, paint);
     canvas.restore();
+  }
+
+  static Color _projectileColorFor(String weaponId) {
+    return switch (weaponId) {
+      'blade' => const Color(0xFFFF6B4A),
+      'pistol' => const Color(0xFFFFE08A),
+      'axe' => const Color(0xFFE24A3C),
+      'staff' => const Color(0xFFB794F6),
+      'bow' => const Color(0xFF7EC8E3),
+      _ => const Color(0xFFFFE08A),
+    };
   }
 
   @override

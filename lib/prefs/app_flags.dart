@@ -59,4 +59,11 @@ class AppFlags {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(hasAgreedTermsKey, value);
   }
+
+  /// Clears in-match tutorial/hint flags only — keeps Terms + onboarding.
+  static Future<void> clearGameplayHints() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(hasSeenTutorialKey);
+    await prefs.remove(hasSeenControlsHintKey);
+  }
 }

@@ -161,10 +161,35 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
   }
 
   void _upgrade(_TalentNode node, EconomyState economy) {
-    if (!_isUnlocked(node) || node.isMaxed) return;
+    if (!_isUnlocked(node)) {
+      _toast('Unlock the previous mark first.');
+      return;
+    }
+    if (node.isMaxed) {
+      _toast('Already maxed.');
+      return;
+    }
+    if (economy.embers < node.nextCost) {
+      _toast('Need ${node.nextCost} Embers.');
+      return;
+    }
     if (economy.upgradeTalent(node.id, node.nextCost)) {
       AudioManager.instance.playPurchase();
+      setState(() => _selectedId = null);
+      _toast('${node.name} upgraded.');
     }
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
@@ -203,7 +228,7 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
                 child: Column(
                   children: [
                     Text(
@@ -230,52 +255,54 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
                           children: [
                             Align(
                               alignment: const Alignment(0, -0.95),
-                              child: _buildNodeChip('maxhp'),
+                              child: _buildNodeChip('maxhp', economy),
                             ),
                             Align(
                               alignment: const Alignment(-0.7, -0.35),
-                              child: _buildNodeChip('damage'),
+                              child: _buildNodeChip('damage', economy),
                             ),
                             Align(
                               alignment: const Alignment(0.7, -0.35),
-                              child: _buildNodeChip('speed'),
+                              child: _buildNodeChip('speed', economy),
                             ),
                             Align(
                               alignment: const Alignment(-0.7, 0.25),
-                              child: _buildNodeChip('luck'),
+                              child: _buildNodeChip('luck', economy),
                             ),
                             Align(
                               alignment: const Alignment(0.7, 0.25),
-                              child: _buildNodeChip('warding'),
+                              child: _buildNodeChip('warding', economy),
                             ),
                             Align(
                               alignment: const Alignment(0, 0.9),
-                              child: _buildNodeChip('emberheart'),
+                              child: _buildNodeChip('emberheart', economy),
                             ),
                           ],
                         ),
                       ),
                     ),
-                    if (selected != null) ...[
-                      const SizedBox(height: 8),
-                      _TalentDetailCard(
-                        node: selected,
-                        unlocked: _isUnlocked(selected),
-                        canAfford: economy.embers >= selected.nextCost,
-                        onUpgrade: () => _upgrade(selected, economy),
-                      ),
-                    ],
                   ],
                 ),
               ),
             ),
+            // Keep buy UI on-screen — was easy to miss under the tall tree.
+            if (selected != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                child: _TalentDetailCard(
+                  node: selected,
+                  unlocked: _isUnlocked(selected),
+                  canAfford: economy.embers >= selected.nextCost,
+                  onUpgrade: () => _upgrade(selected, economy),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildNodeChip(String id) {
+  Widget _buildNodeChip(String id, EconomyState economy) {
     final node = _nodes.firstWhere((n) => n.id == id);
     final unlocked = _isUnlocked(node);
     final selected = _selectedId == id;
@@ -283,7 +310,17 @@ class _TalentTreeScreenState extends State<TalentTreeScreen> {
       node: node,
       unlocked: unlocked,
       selected: selected,
-      onTap: () => setState(() => _selectedId = id),
+      onTap: () {
+        // First tap selects; second tap on same node buys when possible.
+        if (selected &&
+            unlocked &&
+            !node.isMaxed &&
+            economy.embers >= node.nextCost) {
+          _upgrade(node, economy);
+          return;
+        }
+        setState(() => _selectedId = id);
+      },
     );
   }
 }

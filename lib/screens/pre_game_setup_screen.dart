@@ -16,12 +16,12 @@ class _WeaponOption {
   const _WeaponOption({
     required this.id,
     required this.name,
-    required this.icon,
+    required this.imageAsset,
   });
 
   final String id;
   final String name;
-  final IconData icon;
+  final String imageAsset;
 }
 
 class _CharacterLoadout {
@@ -81,27 +81,27 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
     _WeaponOption(
       id: 'blade',
       name: 'Rust Blade',
-      icon: Icons.sports_martial_arts,
+      imageAsset: AppAssets.iconWeaponBlade,
     ),
     _WeaponOption(
       id: 'pistol',
       name: 'Ember Pistol',
-      icon: Icons.flare,
+      imageAsset: AppAssets.iconWeaponPistol,
     ),
     _WeaponOption(
       id: 'axe',
       name: 'Grave Axe',
-      icon: Icons.hardware_outlined,
+      imageAsset: AppAssets.iconWeaponAxe,
     ),
     _WeaponOption(
       id: 'staff',
       name: 'Void Staff',
-      icon: Icons.auto_awesome,
+      imageAsset: AppAssets.iconWeaponStaff,
     ),
     _WeaponOption(
       id: 'bow',
       name: 'Hollow Bow',
-      icon: Icons.north_east,
+      imageAsset: AppAssets.iconWeaponBow,
     ),
   ];
 
@@ -109,7 +109,16 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
   late final Animation<double> _fogDrift;
   late final Animation<double> _fogOpacity;
 
-  int get _stageLevel => widget.stageLevel.clamp(1, 30);
+  /// Prefer the route stage; after Reset clamp back to an unlocked stage (Level 1).
+  int _stageFor(EconomyState economy, String characterId) {
+    final requested =
+        widget.stageLevel.clamp(1, EconomyState.maxCharacterLevel);
+    if (economy.ownsCharacter(characterId) &&
+        economy.isStageUnlocked(characterId, requested)) {
+      return requested;
+    }
+    return economy.nextPlayableLevel(characterId);
+  }
 
   @override
   void initState() {
@@ -145,6 +154,7 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
     final selectedWeaponIndex = _weapons
         .indexWhere((w) => w.id == selectedWeaponId)
         .clamp(0, _weapons.length - 1);
+    final stageLevel = _stageFor(economy, characterId);
 
     return Scaffold(
       backgroundColor: _charcoal,
@@ -249,7 +259,7 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
                     child: Row(
                       children: [
                         Text(
-                          'Level $_stageLevel',
+                          'Level $stageLevel',
                           style: TextStyle(
                             fontFamily: 'serif',
                             fontSize: 16,
@@ -259,7 +269,7 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
                         ),
                         const Spacer(),
                         Text(
-                          'Survive ${stageDurationLabel(_stageLevel)}',
+                          'Survive ${stageDurationLabel(stageLevel)}',
                           style: TextStyle(
                             fontFamily: 'serif',
                             fontSize: 13,
@@ -280,7 +290,7 @@ class _PreGameSetupScreenState extends State<PreGameSetupScreen>
                   const SizedBox(height: 12),
                   _BeginButton(
                     onPressed: () {
-                      final level = _stageLevel;
+                      final level = stageLevel;
                       Navigator.of(context).pushReplacement(
                         PageRouteBuilder(
                           pageBuilder:
@@ -446,14 +456,14 @@ class _WeaponChip extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      weapon.icon,
-                      size: 26,
-                      color: locked
-                          ? Colors.white38
-                          : active
-                              ? _maroonGlow
-                              : Colors.white70,
+                    Opacity(
+                      opacity: locked ? 0.45 : 1,
+                      child: Image.asset(
+                        weapon.imageAsset,
+                        width: 28,
+                        height: 28,
+                        fit: BoxFit.contain,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Padding(

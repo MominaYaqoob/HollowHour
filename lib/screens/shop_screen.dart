@@ -393,7 +393,7 @@ class _ShopScreenState extends State<ShopScreen> {
                   crossAxisCount: 2,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 0.92,
+                  childAspectRatio: 0.78,
                 ),
                 itemCount: items.length,
                 itemBuilder: (context, index) {
@@ -605,6 +605,19 @@ class _ShopCardState extends State<_ShopCard>
                     fontSize: 13,
                     letterSpacing: 0.8,
                     color: Colors.white.withValues(alpha: 0.88),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  item.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 10,
+                    height: 1.25,
+                    letterSpacing: 0.2,
+                    color: Colors.white.withValues(alpha: 0.42),
                   ),
                 ),
                 const SizedBox(height: 4),

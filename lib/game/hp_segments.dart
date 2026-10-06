@@ -4,23 +4,24 @@ import 'dart:math' as math;
 int hpDamagedIndex({
   required double playerHp,
   required double maxHp,
-  int segments = 6,
+  int segments = 3,
 }) {
   if (playerHp <= 0) return -1;
   final hpRatio = maxHp <= 0 ? 0.0 : (playerHp / maxHp).clamp(0.0, 1.0);
   return math.max(0, (hpRatio * segments).ceil() - 1);
 }
 
-/// True when the last 1–2 HP segments remain (same pip count as the HUD HP bar).
+/// True when only the last pip (3-seg bar) or last 1–2 pips (longer bars) remain.
 bool isHpCritical({
   required double playerHp,
   required double maxHp,
-  int segments = 6,
+  int segments = 3,
 }) {
   final index = hpDamagedIndex(
     playerHp: playerHp,
     maxHp: maxHp,
     segments: segments,
   );
-  return index >= 0 && index <= 1;
+  final criticalMaxIndex = segments <= 3 ? 0 : 1;
+  return index >= 0 && index <= criticalMaxIndex;
 }

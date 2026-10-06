@@ -10,6 +10,7 @@ class GameState extends ChangeNotifier {
     this.hollowDepth = 5,
     this.enemyStatScale = 1.0,
     this.playerCharacterId = 'wanderer',
+    this.playerWeaponId = 'blade',
     this.gameMode = GameMode.standard,
     Duration? matchDuration,
     double startingMaxHp = 100,
@@ -19,6 +20,9 @@ class GameState extends ChangeNotifier {
     double startingProjectileSpeed = 420,
     double startingProjectileRadius = 5,
     double startingAimRangeRadius = 190,
+    this.xpGainMul = 1.0,
+    this.emberGainMul = 1.0,
+    this.damageTakenMul = 1.0,
   })  : matchDuration =
             matchDuration ?? gameMode.matchDuration,
         maxHp = startingMaxHp,
@@ -44,6 +48,9 @@ class GameState extends ChangeNotifier {
 
   /// Equipped character id (wanderer/huntress/scholar/brute/ghost).
   String playerCharacterId;
+
+  /// Equipped weapon id — drives projectile tint in the arena painter.
+  final String playerWeaponId;
 
   Offset playerPosition = Offset.zero;
 
@@ -87,6 +94,15 @@ class GameState extends ChangeNotifier {
   double projectileSpeed;
   double projectileRadius;
   double aimRangeRadius;
+
+  /// Luck / Emberheart — multiplies XP orbs collected this run.
+  final double xpGainMul;
+
+  /// Luck / Emberheart — multiplies ember drops from kills.
+  final double emberGainMul;
+
+  /// Warding — multiplies incoming contact damage (below 1 = less hurt).
+  final double damageTakenMul;
 
   /// Magazine — depletes on fire, reloads when empty.
   int maxAmmo = 6;
@@ -269,7 +285,9 @@ class GameState extends ChangeNotifier {
 
   void takeDamage(double amount) {
     if (amount <= 0 || isGameOver || isWin) return;
-    playerHp = (playerHp - amount).clamp(0, maxHp);
+    final applied = amount * damageTakenMul.clamp(0.5, 1.0);
+    if (applied <= 0) return;
+    playerHp = (playerHp - applied).clamp(0, maxHp);
     if (playerHp <= 0) {
       playerHp = 0;
       isGameOver = true;
@@ -295,7 +313,9 @@ class GameState extends ChangeNotifier {
 
   void addXp(double amount) {
     if (amount <= 0 || isGameOver || isWin) return;
-    xp += amount;
+    final applied = amount * xpGainMul.clamp(1.0, 3.0);
+    if (applied <= 0) return;
+    xp += applied;
     while (xp >= xpToNextLevel && !isGameOver && !isWin) {
       xp -= xpToNextLevel;
       level += 1;
@@ -340,7 +360,9 @@ class GameState extends ChangeNotifier {
 
   void addEmbersEarned(int amount) {
     if (amount <= 0) return;
-    embersEarned += amount;
+    final applied =
+        (amount * emberGainMul.clamp(1.0, 3.0)).round().clamp(1, 9999);
+    embersEarned += applied;
   }
 
   /// Frame refresh for entity paints when no GameState field setter ran.

@@ -130,9 +130,38 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
     super.dispose();
   }
 
+  /// After Reset: focus Wanderer and drop stage picks that are no longer unlocked.
+  void _syncAfterProgressChange(EconomyState economy) {
+    final selected = _selected;
+    if (!economy.ownsCharacter(selected.id)) {
+      final wandererIndex = _characters
+          .indexWhere((c) => c.id == 'wanderer')
+          .clamp(0, _characters.length - 1);
+      if (_page.round() != wandererIndex) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _pageController.jumpToPage(wandererIndex);
+          setState(() {
+            _page = wandererIndex.toDouble();
+            _pickedStageLevel = null;
+          });
+        });
+      }
+      return;
+    }
+    final picked = _pickedStageLevel;
+    if (picked != null && !economy.isStageUnlocked(selected.id, picked)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _pickedStageLevel = null);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final economy = context.watch<EconomyState>();
+    _syncAfterProgressChange(economy);
     final selected = _selected;
     final canSelect = economy.ownsCharacter(selected.id);
     final stageLevel = _stageFor(economy, selected);

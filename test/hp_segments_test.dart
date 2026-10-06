@@ -9,19 +9,18 @@ void main() {
     );
     expect(
       hpDamagedIndex(playerHp: 100, maxHp: 100),
-      5,
+      2,
     );
     expect(
       hpDamagedIndex(playerHp: 50, maxHp: 100),
-      2,
+      1,
     );
   });
 
-  test('isHpCritical when 1–2 of 6 segments remain', () {
+  test('isHpCritical when last of 3 segments remains', () {
     expect(isHpCritical(playerHp: 100, maxHp: 100), isFalse);
     expect(isHpCritical(playerHp: 50, maxHp: 100), isFalse);
-    // 2/6 of max → last two pips.
-    expect(isHpCritical(playerHp: 100 * 2 / 6, maxHp: 100), isTrue);
+    expect(isHpCritical(playerHp: 100 * 1 / 3, maxHp: 100), isTrue);
     expect(isHpCritical(playerHp: 10, maxHp: 100), isTrue);
     expect(isHpCritical(playerHp: 0, maxHp: 100), isFalse);
   });

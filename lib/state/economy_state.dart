@@ -13,7 +13,7 @@ class EconomyState extends ChangeNotifier {
     ownedRuneIds = {'gale'};
     equippedCharacterId = 'wanderer';
     equippedWeaponId = 'blade';
-    equippedRuneIds = <String>{};
+    equippedRuneIds = {'gale'};
     talentLevels = {
       'maxhp': 2,
       'damage': 1,
@@ -50,6 +50,30 @@ class EconomyState extends ChangeNotifier {
   late Map<String, int> talentLevels;
   late Map<String, int> characterBestLevel;
 
+  /// Wipes progress back to a fresh install profile and persists.
+  Future<void> resetToDefaults() async {
+    embers = 0;
+    ownedCharacterIds = {'wanderer'};
+    ownedWeaponIds = {'blade', 'pistol'};
+    ownedRuneIds = {'gale'};
+    equippedCharacterId = 'wanderer';
+    equippedWeaponId = 'blade';
+    equippedRuneIds = {'gale'};
+    talentLevels = {
+      'maxhp': 2,
+      'damage': 1,
+      'speed': 0,
+      'luck': 0,
+      'warding': 0,
+      'emberheart': 0,
+    };
+    characterBestLevel = {
+      for (final id in characterProgressionOrder) id: 0,
+    };
+    notifyListeners();
+    await saveToDisk();
+  }
+
   Future<void> loadFromDisk() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKey);
@@ -59,11 +83,28 @@ class EconomyState extends ChangeNotifier {
       final map = jsonDecode(raw) as Map<String, dynamic>;
       embers = (map['embers'] as num?)?.toInt() ?? embers;
       ownedCharacterIds = _stringSet(map['ownedCharacterIds']) ?? ownedCharacterIds;
+      // Starter unlocks must survive empty / corrupt saves.
+      ownedCharacterIds.add('wanderer');
       ownedWeaponIds = _stringSet(map['ownedWeaponIds']) ?? ownedWeaponIds;
+      ownedWeaponIds.addAll({'blade', 'pistol'});
       ownedRuneIds = _stringSet(map['ownedRuneIds']) ?? ownedRuneIds;
+      ownedRuneIds.add('gale');
       equippedCharacterId = map['equippedCharacterId'] as String? ?? equippedCharacterId;
+      if (equippedCharacterId == null ||
+          !ownedCharacterIds.contains(equippedCharacterId)) {
+        equippedCharacterId = 'wanderer';
+      }
       equippedWeaponId = map['equippedWeaponId'] as String? ?? equippedWeaponId;
+      if (equippedWeaponId == null ||
+          !ownedWeaponIds.contains(equippedWeaponId)) {
+        equippedWeaponId = 'blade';
+      }
       equippedRuneIds = _stringSet(map['equippedRuneIds']) ?? equippedRuneIds;
+      equippedRuneIds.removeWhere((id) => !ownedRuneIds.contains(id));
+      // Starter Gale should be equipped when no rune slot is set yet.
+      if (equippedRuneIds.isEmpty && ownedRuneIds.contains('gale')) {
+        equippedRuneIds = {'gale'};
+      }
       final talents = map['talentLevels'];
       if (talents is Map) {
         talentLevels = {

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../ads/ad_manager.dart';
 import '../ads/native_ad_widget.dart';
 import '../audio/audio_manager.dart';
+import '../prefs/app_flags.dart';
 import '../prefs/display_settings.dart';
+import '../state/economy_state.dart';
 import '../theme/app_assets.dart';
 import '../theme/themed_chrome.dart';
 
@@ -92,9 +95,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 AudioManager.instance.playTap();
-                Navigator.of(context).pop();
+                Navigator.of(context).pop(); // close confirm dialog
+                await this.context.read<EconomyState>().resetToDefaults();
+                await AppFlags.clearGameplayHints();
+                if (!mounted) return;
+                final messenger = ScaffoldMessenger.of(this.context);
+                // Clear stale Prepare/Characters so Level 1 shows on next Play.
+                Navigator.of(this.context).popUntil((route) => route.isFirst);
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Progress reset. Fresh start ready.'),
+                  ),
+                );
               },
               child: Text(
                 'Reset',
